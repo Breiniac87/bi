@@ -3,11 +3,13 @@
 import { useState, useMemo } from 'react';
 import { useLocalStorage, useLocalLocalDate } from '@/hooks/use-local-storage';
 import { Card, CardContent } from '@/components/ui/card';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ChartTooltip } from '@/components/ui/chart';
 import { Area, AreaChart, Bar, BarChart, Line, LineChart, ComposedChart, CartesianGrid, XAxis, YAxis, Legend, ResponsiveContainer, LabelList } from 'recharts';
 import { format, parse, isAfter, isBefore } from 'date-fns';
-import { Calendar as CalendarIcon, BarChart3, Activity, TrendingUp, LineChart as LineChartIcon, Hash } from 'lucide-react';
+import { Calendar as CalendarIcon, BarChart3, Activity, TrendingUp, LineChart as LineChartIcon, Hash, Book } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { calculateMetrics, plotMetrics, type DataRow } from '@/lib/metrics';
@@ -214,6 +216,11 @@ export function DashboardClient({ initialData }: { initialData: DataRow[] }) {
               </div>
             </div>
             <div className="flex items-center gap-4">
+              <Link href="/dictionary" passHref>
+                <Button variant="outline" size="icon" title="Справочник метрик">
+                  <Book className="h-[1.2rem] w-[1.2rem]" />
+                </Button>
+              </Link>
               <ThemeToggle />
             </div>
           </CardContent>
