@@ -172,7 +172,7 @@ export function DashboardClient({ initialData }: { initialData: DataRow[] }) {
                       {dateFrom ? format(dateFrom, 'dd.MM.yyyy') : <span>Дата С</span>}
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
-                      <Calendar mode="single" selected={dateFrom} onSelect={(val) => setDateFrom(val)} />
+                      <Calendar mode="single" selected={dateFrom} defaultMonth={dateFrom} onSelect={(val) => setDateFrom(val)} />
                     </PopoverContent>
                   </Popover>
                   <span className="text-muted-foreground">-</span>
@@ -182,7 +182,7 @@ export function DashboardClient({ initialData }: { initialData: DataRow[] }) {
                       {dateTo ? format(dateTo, 'dd.MM.yyyy') : <span>Дата ПО</span>}
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
-                      <Calendar mode="single" selected={dateTo} onSelect={(val) => setDateTo(val)} />
+                      <Calendar mode="single" selected={dateTo} defaultMonth={dateTo} onSelect={(val) => setDateTo(val)} />
                     </PopoverContent>
                   </Popover>
                 </div>
