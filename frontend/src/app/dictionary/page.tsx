@@ -25,7 +25,7 @@ export default function DictionaryPage() {
                 </h2>
               </div>
               
-              <Accordion type="multiple" className="w-full">
+              <Accordion multiple className="w-full">
                 {category.metrics.map((metric, idx) => (
                   <AccordionItem key={idx} value={`${category.id}-${idx}`} className="border-b-0 mb-1">
                     <AccordionTrigger className="hover:no-underline py-2.5 justify-start gap-3 text-left w-full hover:bg-muted/50 px-2 rounded-md transition-colors [&>svg:last-child]:hidden">
