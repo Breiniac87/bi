@@ -24,10 +24,13 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Set up Node.js 20
+      - name: Set up MSVC C++ Compiler Environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install Inno Setup
         run: |
@@ -66,7 +69,7 @@ jobs:
           # 2. Упаковка скомпилированного ETL
           Copy-Item -Recurse -Force "dist\sync_local_to_sqlite" "$stage\etl\sync_local_to_sqlite"
 
-          # 3. Упаковка Next.js Standalone сервера
+          # 3. Упаковка Next.js Standalone сервера (включая скрытые папки .next)
           Get-ChildItem -Force "frontend\.next\standalone\*" | Copy-Item -Destination "$stage\app" -Recurse -Force
           New-Item -ItemType Directory -Force -Path "$stage\app\.next\static" | Out-Null
           Copy-Item -Recurse -Force "frontend\.next\static\*" "$stage\app\.next\static\"
@@ -104,4 +107,3 @@ jobs:
           files: release_windows/E-Commerce-Dashboard-Setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
