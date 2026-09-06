@@ -1,0 +1,107 @@
+name: Build Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    name: Build Windows Setup.exe
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup --no-progress
+
+      - name: Install Python Dependencies & PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pillow
+
+      - name: Generate Multi-Resolution Windows Icon (.ico)
+        run: |
+          python scripts/convert_icon.py
+
+      - name: Compile Python ETL to Executable
+        run: |
+          pyinstaller --noconfirm sync_local_to_sqlite.spec
+
+      - name: Build Next.js Standalone Frontend
+        working-directory: ./frontend
+        run: |
+          npm install
+          npm run build
+
+      - name: Assemble Windows Standalone Bundle
+        shell: pwsh
+        run: |
+          $stage = "dist_windows"
+          $release = "release_windows"
+          New-Item -ItemType Directory -Force -Path "$stage\app", "$stage\etl", $release | Out-Null
+
+          # 1. Чистые шаблоны БД и конфигурации
+          python -c "import sync_local_to_sqlite; sync_local_to_sqlite.init_db(r'$stage\template.db')"
+          @{ ads_dir = ""; sales_dir = "" } | ConvertTo-Json | Set-Content "$stage\template_config.json" -Encoding UTF8
+
+          # 2. Упаковка скомпилированного ETL
+          Copy-Item -Recurse -Force "dist\sync_local_to_sqlite" "$stage\etl\sync_local_to_sqlite"
+
+          # 3. Упаковка Next.js Standalone сервера
+          Get-ChildItem -Force "frontend\.next\standalone\*" | Copy-Item -Destination "$stage\app" -Recurse -Force
+          New-Item -ItemType Directory -Force -Path "$stage\app\.next\static" | Out-Null
+          Copy-Item -Recurse -Force "frontend\.next\static\*" "$stage\app\.next\static\"
+          if (Test-Path "frontend\public") {
+              Copy-Item -Recurse -Force "frontend\public" "$stage\app\public"
+          }
+
+          # 4. Упаковка автономного node.exe
+          $nodePath = (Get-Command node.exe).Source
+          Copy-Item $nodePath "$stage\node.exe"
+
+          # 5. Скрипты запуска и иконка
+          Copy-Item "windows\launch.bat" "$stage\launch.bat"
+          Copy-Item "windows\launcher.vbs" "$stage\launcher.vbs"
+          Copy-Item "windows\stop.bat" "$stage\stop.bat"
+          Copy-Item "windows\app_icon.ico" "$stage\app_icon.ico"
+
+          Write-Host "✓ Промежуточный бандл $stage успешно сформирован."
+
+      - name: Compile Installer with Inno Setup
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DSourceDir="..\dist_windows" windows\installer.iss
+
+      - name: Upload Setup.exe as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: E-Commerce-Dashboard-Windows-Setup
+          path: release_windows/E-Commerce-Dashboard-Setup.exe
+          retention-days: 14
+
+      - name: Publish to GitHub Releases (on Tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release_windows/E-Commerce-Dashboard-Setup.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
