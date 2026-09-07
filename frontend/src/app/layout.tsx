@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
+import { APP_VERSION } from "@/lib/version";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Dashboard",
-  description: "Analytics Dashboard",
+  title: `E-Commerce Dashboard v${APP_VERSION}`,
+  description: "Автономная система сквозной аналитики e-commerce",
 };
 
 export default function RootLayout({

@@ -2,7 +2,9 @@
 ; Target: Windows 10 / 11 (x64)
 
 #define MyAppName "E-Commerce Analytics Dashboard"
-#define MyAppVersion "1.0.0"
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.1"
+#endif
 #define MyAppPublisher "E-Commerce Analytics"
 #define MyAppURL "https://github.com"
 #define MyAppExeName "launcher.exe"
@@ -15,6 +17,7 @@
 AppId={{D3F95B02-819A-4E38-B79C-1F0A438DFB71}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} v{#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
@@ -24,7 +27,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\release_windows
-OutputBaseFilename=E-Commerce-Dashboard-Setup
+OutputBaseFilename=E-Commerce-Dashboard-Setup-v{#MyAppVersion}
 SetupIconFile=app_icon.ico
 Compression=lzma2/max
 SolidCompression=yes

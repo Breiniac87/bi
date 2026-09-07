@@ -16,6 +16,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { DataSyncPopover } from '@/components/DataSyncPopover';
 import { ComparativeChartSection } from '@/components/dashboard/ComparativeChartSection';
 import { CorrelationChartSection } from '@/components/dashboard/CorrelationChartSection';
+import { APP_VERSION } from '@/lib/version';
 
 const CHART_COLORS = [
   '#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#9333ea', '#0891b2', '#ea580c', '#4f46e5'
@@ -397,9 +398,14 @@ export function DashboardClient({ initialData }: { initialData: DataRow[] }) {
 
             {/* Блок 4: Управление и действия */}
             <div className="flex flex-col items-center justify-center shrink-0">
-              <label className="text-[11px] font-medium text-muted-foreground text-center block mb-1 leading-none">
-                Управление
-              </label>
+              <div className="flex items-center justify-center gap-1.5 mb-1 leading-none">
+                <label className="text-[11px] font-medium text-muted-foreground text-center block leading-none">
+                  Управление
+                </label>
+                <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 leading-none tracking-tight" title={`Версия приложения: v${APP_VERSION}`}>
+                  v{APP_VERSION}
+                </span>
+              </div>
               <div className="flex items-center gap-1.5">
                 <Link href="/dictionary" passHref>
                   <Button variant="outline" size="icon" className="h-8 w-8 shrink-0 shadow-sm" title="Справочник метрик">
@@ -649,6 +655,17 @@ export function DashboardClient({ initialData }: { initialData: DataRow[] }) {
           )
         )}
       </div>
+
+      {/* Нижняя информационная плашка с версией приложения */}
+      <footer className="w-full max-w-[1920px] mx-auto px-4 md:px-8 py-6 mt-12 border-t border-border/40 text-center">
+        <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
+          <span>E-Commerce Analytics Dashboard</span>
+          <span>•</span>
+          <span className="font-mono font-medium text-foreground/80">v{APP_VERSION}</span>
+          <span>•</span>
+          <span>Автономный режим Windows</span>
+        </p>
+      </footer>
 
       {/* Полноэкранный оверлей после выключения сервера */}
       {isStopped && (

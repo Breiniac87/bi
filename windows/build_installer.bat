@@ -105,6 +105,12 @@ echo [OK] Промежуточный бандл готов в %STAGE_DIR%.
 
 :: 7. Компиляция Inno Setup
 echo --- [5/5] Создание установщика Setup.exe через Inno Setup ---
+set "APP_VERSION=1.0.1"
+for /f "tokens=2 delims=:, " %%a in ('findstr /r "\"version\":" "%PROJECT_ROOT%\frontend\package.json"') do (
+    set "RAW_VER=%%~a"
+    set "APP_VERSION=!RAW_VER:"=!"
+)
+
 set "ISCC_EXE="
 where iscc.exe >nul 2>&1
 if not errorlevel 1 (
@@ -118,8 +124,8 @@ if not errorlevel 1 (
 )
 
 if defined ISCC_EXE (
-    echo Запуск компилятора Inno Setup: "%ISCC_EXE%"...
-    "%ISCC_EXE%" /DSourceDir="%STAGE_DIR%" "%DIR%\installer.iss"
+    echo Запуск компилятора Inno Setup: "%ISCC_EXE%" (версия: %APP_VERSION%)...
+    "%ISCC_EXE%" /DMyAppVersion="%APP_VERSION%" /DSourceDir="%STAGE_DIR%" "%DIR%\installer.iss"
     if errorlevel 1 (
         echo [ОШИБКА] Сборка инсталлятора не удалась.
         pause
@@ -128,7 +134,7 @@ if defined ISCC_EXE (
     echo ==========================================================
     echo   СБОРКА УСПЕШНО ЗАВЕРШЕНА!
     echo   Готовый файл установщика:
-    echo   %RELEASE_DIR%\E-Commerce-Dashboard-Setup.exe
+    echo   %RELEASE_DIR%\E-Commerce-Dashboard-Setup-v%APP_VERSION%.exe
     echo ==========================================================
 ) else (
     echo [ИНФОРМАЦИЯ] Inno Setup не установлен.

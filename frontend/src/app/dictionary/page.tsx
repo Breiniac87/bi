@@ -1,6 +1,7 @@
 import { metricsDictionary } from '@/data/metrics-dictionary';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Folder, FileText, ArrowLeft } from 'lucide-react';
+import { APP_VERSION } from '@/lib/version';
 import Link from 'next/link';
 
 export default function DictionaryPage() {
@@ -11,7 +12,12 @@ export default function DictionaryPage() {
         <Link href="/" className="hover:bg-muted p-2 rounded-full transition-colors">
           <ArrowLeft className="h-6 w-6" />
         </Link>
-        <h1 className="text-3xl font-bold">Справочник метрик</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold">Справочник метрик</h1>
+          <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+            v{APP_VERSION}
+          </span>
+        </div>
       </div>
 
       <div className="w-full max-w-[1920px] mx-auto px-4 md:px-8 lg:px-12">
