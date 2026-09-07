@@ -3,19 +3,13 @@ import path from 'path';
 import fs from 'fs';
 
 function getAppDataDir(): string {
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
-    if (appData) {
-      return path.join(appData, 'ECommerceDashboard');
-    }
-    const userProfile = process.env.USERPROFILE || '';
-    if (userProfile) {
-      return path.join(userProfile, 'AppData', 'Roaming', 'ECommerceDashboard');
-    }
+  const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+  if (appData) {
+    return path.join(appData, 'ECommerceDashboard');
   }
-  const home = process.env.HOME || '';
-  if (home) {
-    return path.join(home, 'Library/Application Support/ECommerceDashboard');
+  const userProfile = process.env.USERPROFILE || '';
+  if (userProfile) {
+    return path.join(userProfile, 'AppData', 'Roaming', 'ECommerceDashboard');
   }
   return '';
 }

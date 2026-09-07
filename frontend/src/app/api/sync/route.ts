@@ -23,18 +23,15 @@ function getPythonPath(projectRoot: string): string {
   if (process.env.PYTHON_PATH && fs.existsSync(process.env.PYTHON_PATH)) {
     return process.env.PYTHON_PATH;
   }
-  if (process.platform === 'win32') {
-    const venvPythonWin = path.join(projectRoot, 'venv', 'Scripts', 'python.exe');
-    if (fs.existsSync(venvPythonWin)) {
-      return venvPythonWin;
-    }
-    return 'python';
+  const venvPythonWin = path.join(projectRoot, 'venv', 'Scripts', 'python.exe');
+  if (fs.existsSync(venvPythonWin)) {
+    return venvPythonWin;
   }
   const venvPython = path.join(projectRoot, 'venv', 'bin', 'python3');
   if (fs.existsSync(venvPython)) {
     return venvPython;
   }
-  return 'python3';
+  return process.platform === 'win32' ? 'python' : 'python3';
 }
 
 interface EtlRunner {
@@ -46,8 +43,7 @@ interface EtlRunner {
 function getEtlRunner(additionalArgs: string[]): EtlRunner {
   const cwd = process.cwd();
   const root = getProjectRoot();
-  const isWin = process.platform === 'win32';
-  const exeName = isWin ? 'sync_local_to_sqlite.exe' : 'sync_local_to_sqlite';
+  const exeName = 'sync_local_to_sqlite.exe';
 
   // 1. Проверяем явно заданную переменную окружения для бинарника
   if (process.env.ETL_BIN_PATH && fs.existsSync(/*turbopackIgnore: true*/ process.env.ETL_BIN_PATH)) {

@@ -7,7 +7,7 @@ batPath = currentDir & "\launch.bat"
 
 If FSO.FileExists(batPath) Then
     ' 0 = Hide console window, False = Return immediately
-    WshShell.Run """" & batPath & """", 0, False
+    WshShell.Run "%comspec% /c """ & batPath & """", 0, False
 Else
     MsgBox "Файл launch.bat не найден в папке: " & currentDir, 16, "Ошибка запуска"
 End If

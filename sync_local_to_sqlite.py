@@ -16,12 +16,10 @@ sqlite3.register_adapter(np.float32, float)
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 def get_app_support_dir():
-    if sys.platform == "win32":
-        app_data = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
-        if app_data:
-            return os.path.join(app_data, "ECommerceDashboard")
-        return os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "ECommerceDashboard")
-    return os.path.expanduser("~/Library/Application Support/ECommerceDashboard")
+    app_data = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
+    if app_data:
+        return os.path.join(app_data, "ECommerceDashboard")
+    return os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "ECommerceDashboard")
 
 APP_SUPPORT_DIR = get_app_support_dir()
 

@@ -19,19 +19,10 @@ function getConfigPath(): string {
   if (process.env.CONFIG_PATH && fs.existsSync(/*turbopackIgnore: true*/ process.env.CONFIG_PATH)) {
     return process.env.CONFIG_PATH;
   }
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
-    if (appData) {
-      const winCfg = path.join(appData, 'ECommerceDashboard', 'config.json');
-      if (fs.existsSync(/*turbopackIgnore: true*/ winCfg)) return winCfg;
-    }
-  }
-  const home = process.env.HOME || '';
-  if (home) {
-    const appSupportCfg = path.join(home, 'Library/Application Support/ECommerceDashboard/config.json');
-    if (fs.existsSync(/*turbopackIgnore: true*/ appSupportCfg)) {
-      return appSupportCfg;
-    }
+  const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+  if (appData) {
+    const winCfg = path.join(appData, 'ECommerceDashboard', 'config.json');
+    if (fs.existsSync(/*turbopackIgnore: true*/ winCfg)) return winCfg;
   }
   return path.join(getProjectRoot(), 'config.json');
 }
@@ -101,26 +92,12 @@ export async function POST(request: Request) {
       }
     }
 
-    const cmd = process.platform === 'win32'
-      ? getWindowsFolderDialogCmd(title, currentPath)
-      : `osascript -e 'tell application "System Events"' -e 'activate' -e 'set f to choose folder with prompt "Выберите папку с отчетами по ${title}:"' -e 'return POSIX path of f' -e 'end tell'`;
+    const cmd = getWindowsFolderDialogCmd(title, currentPath);
 
     return new Promise<NextResponse>((resolve) => {
       exec(cmd, (error, stdout, stderr) => {
-        if (error && process.platform !== 'win32') {
-          // Если пользователь нажал "Отмена" в диалоге macOS (код -128 на любом языке)
-          const isCanceled =
-            stderr.includes('User canceled') ||
-            error.message.includes('User canceled') ||
-            stderr.includes('-128') ||
-            error.message.includes('-128') ||
-            stderr.includes('Отменено пользователем') ||
-            error.message.includes('Отменено пользователем');
-
-          if (isCanceled) {
-            return resolve(NextResponse.json({ success: false, canceled: true }));
-          }
-          console.error('Ошибка выбора папки на macOS:', error, stderr);
+        if (error) {
+          console.error('Ошибка выбора папки на Windows:', error, stderr);
           return resolve(NextResponse.json({ success: false, error: stderr || error.message }, { status: 500 }));
         }
 

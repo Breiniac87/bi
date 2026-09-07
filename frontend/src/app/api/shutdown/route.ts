@@ -7,16 +7,9 @@ export async function POST() {
 
   // Удаляем server.pid чтобы лаунчеры знали, что сервер выключен
   let pidFile = '';
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
-    if (appData) {
-      pidFile = path.join(appData, 'ECommerceDashboard', 'server.pid');
-    }
-  } else {
-    const home = process.env.HOME || '';
-    if (home) {
-      pidFile = path.join(home, 'Library/Application Support/ECommerceDashboard/server.pid');
-    }
+  const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+  if (appData) {
+    pidFile = path.join(appData, 'ECommerceDashboard', 'server.pid');
   }
 
   if (pidFile) {

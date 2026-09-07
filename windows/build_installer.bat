@@ -89,8 +89,13 @@ for /f "delims=" %%I in ('where node.exe') do (
     if not exist "%STAGE_DIR%\node.exe" copy /y "%%I" "%STAGE_DIR%\node.exe" >nul
 )
 
-:: 6. Копирование скриптов запуска и иконки
-echo --- [4/5] Упаковка лаунчеров и ассетов ---
+:: 6. Компиляция нативного лаунчера и упаковка ассетов
+echo --- [4/5] Сборка нативного лаунчера и ассетов ---
+where cl.exe >nul 2>&1
+if not errorlevel 1 (
+    rc.exe /fo "%DIR%\app_icon.res" "%DIR%\app_icon.rc" >nul 2>&1
+    cl.exe /O2 /W3 /DUNICODE /D_UNICODE "%DIR%\launcher.c" "%DIR%\app_icon.res" /Fe:"%STAGE_DIR%\launcher.exe" user32.lib shell32.lib wininet.lib shlwapi.lib /link /SUBSYSTEM:WINDOWS >nul 2>&1
+)
 copy /y "%DIR%\launch.bat" "%STAGE_DIR%\launch.bat" >nul
 copy /y "%DIR%\launcher.vbs" "%STAGE_DIR%\launcher.vbs" >nul
 copy /y "%DIR%\stop.bat" "%STAGE_DIR%\stop.bat" >nul

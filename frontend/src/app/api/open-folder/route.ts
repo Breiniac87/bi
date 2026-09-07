@@ -20,19 +20,10 @@ function getConfigPath(): string {
   if (process.env.CONFIG_PATH && fs.existsSync(process.env.CONFIG_PATH)) {
     return process.env.CONFIG_PATH;
   }
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
-    if (appData) {
-      const winCfg = path.join(appData, 'ECommerceDashboard', 'config.json');
-      if (fs.existsSync(winCfg)) return winCfg;
-    }
-  }
-  const home = process.env.HOME || '';
-  if (home) {
-    const appSupportCfg = path.join(home, 'Library/Application Support/ECommerceDashboard/config.json');
-    if (fs.existsSync(appSupportCfg)) {
-      return appSupportCfg;
-    }
+  const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+  if (appData) {
+    const winCfg = path.join(appData, 'ECommerceDashboard', 'config.json');
+    if (fs.existsSync(winCfg)) return winCfg;
   }
   return path.join(getProjectRoot(), 'config.json');
 }
@@ -62,20 +53,18 @@ export async function POST(request: Request) {
       fs.mkdirSync(targetPath, { recursive: true });
     }
 
-    // В режиме dryRun (например, для тестов) только валидируем путь и доступность без открытия окна Проводника / Finder
+    // В режиме dryRun (например, для тестов) только валидируем путь и доступность без открытия окна Проводника
     if (body.dryRun) {
       return NextResponse.json({ success: true, folder: targetPath, dryRun: true });
     }
 
-    const openCmd = process.platform === 'win32'
-      ? `explorer "${path.normalize(targetPath)}"`
-      : `open "${targetPath}"`;
+    const openCmd = `explorer "${path.normalize(targetPath)}"`;
 
     return new Promise<NextResponse>((resolve) => {
       exec(openCmd, (error) => {
         if (error) {
           // На Windows explorer может вернуть код возврата 1 даже при успешном открытии папки
-          if (process.platform === 'win32' && error.code === 1) {
+          if (error.code === 1) {
             return resolve(NextResponse.json({ success: true, folder: targetPath }));
           }
           return resolve(NextResponse.json({ success: false, error: error.message }, { status: 500 }));

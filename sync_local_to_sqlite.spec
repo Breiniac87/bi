@@ -19,14 +19,7 @@ pyz = PYZ(a.pure)
 import os
 import sys
 
-icon_file = None
-if sys.platform == 'win32':
-    if os.path.exists('windows/app_icon.ico'):
-        icon_file = 'windows/app_icon.ico'
-    elif os.path.exists('scripts/app_icon.ico'):
-        icon_file = 'scripts/app_icon.ico'
-elif sys.platform == 'darwin' and os.path.exists('scripts/AppIcon.icns'):
-    icon_file = 'scripts/AppIcon.icns'
+icon_file = 'windows/app_icon.ico' if os.path.exists('windows/app_icon.ico') else 'scripts/app_icon.ico'
 
 exe = EXE(
     pyz,
