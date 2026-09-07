@@ -160,7 +160,7 @@ export function DashboardClient({ initialData }: { initialData: DataRow[] }) {
   const allSellers = useMemo(() => {
     const rawSellers = Array.from(new Set(filteredBase.map(d => d.name as string)));
     return sortSellersAlphabetically(
-      rawSellers.filter(s => s && s !== 'nan' && !s.startsWith('Продавец '))
+      rawSellers.filter(s => s && s !== 'nan' && s !== 'null' && s !== 'undefined')
     );
   }, [filteredBase]);
 
@@ -182,23 +182,50 @@ export function DashboardClient({ initialData }: { initialData: DataRow[] }) {
       if (!bySellerByDate[seller][date]) {
         bySellerByDate[seller][date] = {
           ...curr,
-          'Расходы на РК': 0, 'Показы': 0, 'Клики': 0, 'Корзины (всего)': 0,
-          'Заказов шт. (по РК)': 0, 'Сумма заказов (по РК)': 0, 'Заказов шт. (всего)': 0,
-          'Сумма заказов (всего)': 0, 'Сумма выкупов': 0, 'Отмены шт.': 0, 'Возвраты шт.': 0
+          'has_ads': 0,
+          'has_sales': 0,
+          'Расходы на РК': null, 'Показы': null, 'Клики': null, 'Корзины (всего)': null,
+          'Заказов шт. (по РК)': null, 'Сумма заказов (по РК)': null, 'Медианная позиция': null,
+          'Заказов шт. (всего)': null, 'Сумма заказов (всего)': null, 'Сумма выкупов': null,
+          'Отмены шт.': null, 'Возвраты шт.': null,
+          'Цена до СПП': null, 'Цена после СПП': null, 'СПП %': null
         };
       }
       const acc = bySellerByDate[seller][date];
-      acc['Расходы на РК'] = Number(acc['Расходы на РК'] || 0) + Number(curr['Расходы на РК'] || 0);
-      acc['Показы'] = Number(acc['Показы'] || 0) + Number(curr['Показы'] || 0);
-      acc['Клики'] = Number(acc['Клики'] || 0) + Number(curr['Клики'] || 0);
-      acc['Корзины (всего)'] = Number(acc['Корзины (всего)'] || 0) + Number(curr['Корзины (всего)'] || 0);
-      acc['Заказов шт. (по РК)'] = Number(acc['Заказов шт. (по РК)'] || 0) + Number(curr['Заказов шт. (по РК)'] || 0);
-      acc['Сумма заказов (по РК)'] = Number(acc['Сумма заказов (по РК)'] || 0) + Number(curr['Сумма заказов (по РК)'] || 0);
-      acc['Заказов шт. (всего)'] = Number(acc['Заказов шт. (всего)'] || 0) + Number(curr['Заказов шт. (всего)'] || 0);
-      acc['Сумма заказов (всего)'] = Number(acc['Сумма заказов (всего)'] || 0) + Number(curr['Сумма заказов (всего)'] || 0);
-      acc['Сумма выкупов'] = Number(acc['Сумма выкупов'] || 0) + Number(curr['Сумма выкупов'] || 0);
-      acc['Отмены шт.'] = Number(acc['Отмены шт.'] || 0) + Number(curr['Отмены шт.'] || 0);
-      acc['Возвраты шт.'] = Number(acc['Возвраты шт.'] || 0) + Number(curr['Возвраты шт.'] || 0);
+
+      const isAdRow = Number(curr['has_ads']) === 1 || (curr['Расходы на РК'] !== null && curr['Расходы на РК'] !== undefined);
+      const isSalesRow = Number(curr['has_sales']) === 1 || (curr['Заказов шт. (всего)'] !== null && curr['Заказов шт. (всего)'] !== undefined);
+
+      if (isAdRow) {
+        acc['has_ads'] = 1;
+        acc['Расходы на РК'] = Number(acc['Расходы на РК'] || 0) + Number(curr['Расходы на РК'] || 0);
+        acc['Показы'] = Number(acc['Показы'] || 0) + Number(curr['Показы'] || 0);
+        acc['Клики'] = Number(acc['Клики'] || 0) + Number(curr['Клики'] || 0);
+        acc['Корзины (всего)'] = Number(acc['Корзины (всего)'] || 0) + Number(curr['Корзины (всего)'] || 0);
+        acc['Заказов шт. (по РК)'] = Number(acc['Заказов шт. (по РК)'] || 0) + Number(curr['Заказов шт. (по РК)'] || 0);
+        acc['Сумма заказов (по РК)'] = Number(acc['Сумма заказов (по РК)'] || 0) + Number(curr['Сумма заказов (по РК)'] || 0);
+        if (curr['Медианная позиция'] !== null && curr['Медианная позиция'] !== undefined) {
+          acc['Медианная позиция'] = Number(curr['Медианная позиция']);
+        }
+      }
+
+      if (isSalesRow) {
+        acc['has_sales'] = 1;
+        acc['Заказов шт. (всего)'] = Number(acc['Заказов шт. (всего)'] || 0) + Number(curr['Заказов шт. (всего)'] || 0);
+        acc['Сумма заказов (всего)'] = Number(acc['Сумма заказов (всего)'] || 0) + Number(curr['Сумма заказов (всего)'] || 0);
+        acc['Сумма выкупов'] = Number(acc['Сумма выкупов'] || 0) + Number(curr['Сумма выкупов'] || 0);
+        acc['Отмены шт.'] = Number(acc['Отмены шт.'] || 0) + Number(curr['Отмены шт.'] || 0);
+        acc['Возвраты шт.'] = Number(acc['Возвраты шт.'] || 0) + Number(curr['Возвраты шт.'] || 0);
+        if (curr['Цена до СПП'] !== null && curr['Цена до СПП'] !== undefined) {
+          acc['Цена до СПП'] = Number(curr['Цена до СПП']);
+        }
+        if (curr['Цена после СПП'] !== null && curr['Цена после СПП'] !== undefined) {
+          acc['Цена после СПП'] = Number(curr['Цена после СПП']);
+        }
+        if (curr['СПП %'] !== null && curr['СПП %'] !== undefined) {
+          acc['СПП %'] = Number(curr['СПП %']);
+        }
+      }
     }
 
     for (const seller in bySellerByDate) {
@@ -216,7 +243,7 @@ export function DashboardClient({ initialData }: { initialData: DataRow[] }) {
   }, [sellerDailyMap]);
 
   const formatMetricValue = useCallback((value: any, metricName?: string) => {
-    if (value === undefined || value === null || isNaN(Number(value)) || Number(value) === 0) return '';
+    if (value === undefined || value === null || value === '' || isNaN(Number(value))) return 'Нет данных';
     const val = Number(value);
 
     // 1. Проценты (CTR, CR, ДРР, СПП, доли)

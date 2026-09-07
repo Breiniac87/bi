@@ -331,13 +331,16 @@ export function ComparativeChartSection({
                       return (
                         <div className="bg-background border rounded-lg shadow-lg p-3">
                           <p className="font-semibold mb-2">{label}</p>
-                          {payload.map((p: any) => (
-                            <div key={p.name} className="flex items-center gap-2 text-sm">
-                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
-                              <span className="font-medium">{p.name}:</span>
-                              <span>{formatMetricValue(p.payload[p.name]?.[metric], metric) || 0}</span>
-                            </div>
-                          ))}
+                          {payload.map((p: any) => {
+                            const val = p.payload[p.name]?.[metric];
+                            return (
+                              <div key={p.name} className="flex items-center gap-2 text-sm">
+                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
+                                <span className="font-medium">{p.name}:</span>
+                                <span>{val === null || val === undefined ? 'Нет данных' : formatMetricValue(val, metric)}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       );
                     }
@@ -353,7 +356,7 @@ export function ComparativeChartSection({
                         {showValues && (
                           <LabelList
                             position="top"
-                            formatter={(val: any) => formatMetricValue(val, metric)}
+                            formatter={(val: any) => val === null || val === undefined ? '' : formatMetricValue(val, metric)}
                             style={{ fontSize: 10, fill: 'currentColor' }}
                           />
                         )}
@@ -370,12 +373,12 @@ export function ComparativeChartSection({
                         stroke={color}
                         strokeWidth={2.5}
                         dot={showValues ? { r: 3 } : false}
-                        connectNulls
+                        connectNulls={false}
                       >
                         {showValues && (
                           <LabelList
                             position="top"
-                            formatter={(val: any) => formatMetricValue(val, metric)}
+                            formatter={(val: any) => val === null || val === undefined ? '' : formatMetricValue(val, metric)}
                             style={{ fontSize: 10, fill: 'currentColor' }}
                           />
                         )}
@@ -393,12 +396,12 @@ export function ComparativeChartSection({
                       fill={`url(#color-${id}-${idx})`}
                       strokeWidth={2}
                       dot={showValues ? { r: 3 } : false}
-                      connectNulls
+                      connectNulls={false}
                     >
                       {showValues && (
                         <LabelList
                           position="top"
-                          formatter={(val: any) => formatMetricValue(val, metric)}
+                          formatter={(val: any) => val === null || val === undefined ? '' : formatMetricValue(val, metric)}
                           style={{ fontSize: 10, fill: 'currentColor' }}
                         />
                       )}

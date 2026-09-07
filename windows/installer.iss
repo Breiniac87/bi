@@ -3,7 +3,7 @@
 
 #define MyAppName "E-Commerce Analytics Dashboard"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.1"
+  #define MyAppVersion "1.0.2"
 #endif
 #define MyAppPublisher "E-Commerce Analytics"
 #define MyAppURL "https://github.com"

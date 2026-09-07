@@ -179,6 +179,8 @@ def init_db(db_path=DEFAULT_DB_PATH):
             "Тип РК" TEXT,
             "Флаг CPC" TEXT,
             "name" TEXT,
+            "has_ads" INTEGER DEFAULT 0,
+            "has_sales" INTEGER DEFAULT 0,
             "Расходы на РК" REAL,
             "Показы" REAL,
             "Клики" REAL,
@@ -196,6 +198,15 @@ def init_db(db_path=DEFAULT_DB_PATH):
             "СПП %" REAL
         )
     ''')
+    cursor.execute("PRAGMA table_info(merged_data)")
+    md_cols = [row[1] for row in cursor.fetchall()]
+    if 'has_ads' not in md_cols:
+        try: cursor.execute("ALTER TABLE merged_data ADD COLUMN has_ads INTEGER DEFAULT 0")
+        except Exception: pass
+    if 'has_sales' not in md_cols:
+        try: cursor.execute("ALTER TABLE merged_data ADD COLUMN has_sales INTEGER DEFAULT 0")
+        except Exception: pass
+
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_merged_date ON merged_data ("Дата")')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_merged_name ON merged_data ("name")')
 
@@ -331,6 +342,9 @@ def process_ads_file(filepath, filename, conn, file_hash=None, mtime=None, size=
     item_col = 'nm' if 'nm' in df.columns else ('id_товара' if 'id_товара' in df.columns else 'item_id')
     supp_col = 'supplier_id' if 'supplier_id' in df.columns else ('id_продавца' if 'id_продавца' in df.columns else None)
 
+    raw_name = df['name'] if 'name' in df.columns else (df['seller_name'] if 'seller_name' in df.columns else pd.Series('', index=df.index))
+    seller_name_cleaned = raw_name.astype(str).str.strip().str.lower().replace({'nan': '', 'none': '', 'null': ''})
+
     ads_processed = pd.DataFrame({
         'source_file': filename,
         'event_date': event_date_series,
@@ -338,7 +352,7 @@ def process_ads_file(filepath, filename, conn, file_hash=None, mtime=None, size=
         'supplier_id': df[supp_col].astype(str) if supp_col and supp_col in df.columns else '',
         'rk_type': df['тип рк'].astype(str) if 'тип рк' in df.columns else '',
         'cpc_flag': df['флаг cpc'].astype(str) if 'флаг cpc' in df.columns else '',
-        'seller_name': df['name'].astype(str) if 'name' in df.columns else '',
+        'seller_name': seller_name_cleaned,
         'orders_count_direct': get_num(df, 'кол-во заказов (прямая)'),
         'orders_count_assoc': get_num(df, 'кол-во заказов (атрибуция, ассоциированная)'),
         'gmv_direct': get_num(df, 'gmv заказов (прямая)'),
@@ -410,6 +424,11 @@ def process_sales_file(filepath, filename, conn, file_hash=None, mtime=None, siz
     return len(sales_processed)
 
 def rebuild_merged_data(conn):
+    # Приводим существующие имена продавцов в ads к lowercase
+    cursor = conn.cursor()
+    cursor.execute("UPDATE ads SET seller_name = LOWER(TRIM(seller_name)) WHERE seller_name IS NOT NULL")
+    conn.commit()
+
     df_ads = pd.read_sql("SELECT * FROM ads", conn)
     df_sales = pd.read_sql("SELECT * FROM sales", conn)
 
@@ -419,103 +438,173 @@ def rebuild_merged_data(conn):
     if not df_sales.empty and 'event_date' in df_sales.columns:
         df_sales = df_sales[df_sales['event_date'].notna() & (df_sales['event_date'] != '') & (df_sales['event_date'] != '1970-01-01')]
 
-    if df_ads.empty or df_sales.empty:
+    if df_ads.empty and df_sales.empty:
+        cursor.execute("DELETE FROM merged_data")
+        conn.commit()
         return 0
 
-    df_ads.rename(columns={
-        'event_date': 'Дата',
-        'item_id': 'id_товара',
-        'supplier_id': 'id_продавца',
-        'rk_type': 'Тип РК',
-        'cpc_flag': 'Флаг CPC',
-        'seller_name': 'name'
-    }, inplace=True)
+    # Нормализация seller_name в ads
+    if not df_ads.empty and 'seller_name' in df_ads.columns:
+        df_ads['seller_name'] = df_ads['seller_name'].astype(str).str.strip().str.lower()
+        df_ads['seller_name'] = df_ads['seller_name'].replace({'nan': np.nan, 'none': np.nan, 'null': np.nan, '': np.nan})
 
-    df_ads['Заказов шт. (по РК)'] = df_ads['orders_count_direct'] + df_ads['orders_count_assoc']
-    df_ads['Сумма заказов (по РК)'] = df_ads['gmv_direct'] + df_ads['gmv_assoc']
-    df_ads['Корзины (всего)'] = df_ads['carts_direct'] + df_ads['carts_assoc']
-    df_ads['Расходы на РК'] = df_ads['expenses']
-    df_ads['Показы'] = df_ads['impressions']
-    df_ads['Клики'] = df_ads['clicks']
-    df_ads['Медианная позиция'] = df_ads['median_position']
+    # Построение справочников имен брендов из рекламы
+    mapping_item = {}
+    mapping_supp = {}
+    if not df_ads.empty and 'seller_name' in df_ads.columns:
+        valid_ads = df_ads[df_ads['seller_name'].notna() & (df_ads['seller_name'] != '')]
+        if not valid_ads.empty:
+            mapping_item = valid_ads.drop_duplicates(subset=['item_id']).set_index('item_id')['seller_name'].to_dict()
+            mapping_supp = valid_ads.drop_duplicates(subset=['supplier_id']).set_index('supplier_id')['seller_name'].to_dict()
 
-    df_sales.rename(columns={
-        'event_date': 'Дата',
-        'item_id': 'id_товара',
-        'supplier_id': 'id_продавца'
-    }, inplace=True)
+    if not df_ads.empty:
+        df_ads.rename(columns={
+            'event_date': 'Дата',
+            'item_id': 'id_товара',
+            'supplier_id': 'id_продавца',
+            'rk_type': 'Тип РК',
+            'cpc_flag': 'Флаг CPC',
+            'seller_name': 'name'
+        }, inplace=True)
+        df_ads['id_товара'] = df_ads['id_товара'].astype(str)
+        df_ads['id_продавца'] = df_ads['id_продавца'].astype(str)
+        df_ads['Заказов шт. (по РК)'] = pd.to_numeric(df_ads['orders_count_direct'], errors='coerce').fillna(0) + pd.to_numeric(df_ads['orders_count_assoc'], errors='coerce').fillna(0)
+        df_ads['Сумма заказов (по РК)'] = pd.to_numeric(df_ads['gmv_direct'], errors='coerce').fillna(0) + pd.to_numeric(df_ads['gmv_assoc'], errors='coerce').fillna(0)
+        df_ads['Корзины (всего)'] = pd.to_numeric(df_ads['carts_direct'], errors='coerce').fillna(0) + pd.to_numeric(df_ads['carts_assoc'], errors='coerce').fillna(0)
+        df_ads['Расходы на РК'] = pd.to_numeric(df_ads['expenses'], errors='coerce').fillna(0)
+        df_ads['Показы'] = pd.to_numeric(df_ads['impressions'], errors='coerce').fillna(0)
+        df_ads['Клики'] = pd.to_numeric(df_ads['clicks'], errors='coerce').fillna(0)
+        df_ads['Медианная позиция'] = pd.to_numeric(df_ads['median_position'], errors='coerce')
+        df_ads['has_ads'] = 1
 
-    sales_agg_dict = {
-        'orders_count': 'sum', 'orders_sum': 'sum', 'buyouts_sum': 'sum', 
-        'price_before_spp': 'mean', 'price_after_spp': 'mean', 'spp_percent': 'mean',
-        'cancels_count': 'sum', 'returns_count': 'sum' 
-    }
-    df_sales_grouped = df_sales.groupby(['Дата', 'id_товара', 'id_продавца'], as_index=False).agg(sales_agg_dict)
-    
-    df_sales_grouped.rename(columns={
-        'orders_count': 'Заказов шт. (всего - справочно)',
-        'orders_sum': 'Сумма заказов (всего - справочно)',
-        'buyouts_sum': 'Сумма выкупов (всего - справочно)',
-        'price_before_spp': 'Цена до СПП',
-        'price_after_spp': 'Цена после СПП',
-        'spp_percent': 'СПП %',
-        'cancels_count': 'Отмены (шт - справочно)',
-        'returns_count': 'Возвраты (шт - справочно)'
-    }, inplace=True)
+    if not df_sales.empty:
+        df_sales.rename(columns={
+            'event_date': 'Дата',
+            'item_id': 'id_товара',
+            'supplier_id': 'id_продавца'
+        }, inplace=True)
+        df_sales['id_товара'] = df_sales['id_товара'].astype(str)
+        df_sales['id_продавца'] = df_sales['id_продавца'].astype(str)
+        sales_agg_dict = {
+            'orders_count': 'sum', 'orders_sum': 'sum', 'buyouts_sum': 'sum', 
+            'price_before_spp': 'mean', 'price_after_spp': 'mean', 'spp_percent': 'mean',
+            'cancels_count': 'sum', 'returns_count': 'sum' 
+        }
+        df_sales_grouped = df_sales.groupby(['Дата', 'id_товара', 'id_продавца'], as_index=False).agg(sales_agg_dict)
+        df_sales_grouped.rename(columns={
+            'orders_count': 'Заказов шт. (всего - справочно)',
+            'orders_sum': 'Сумма заказов (всего - справочно)',
+            'buyouts_sum': 'Сумма выкупов (всего - справочно)',
+            'price_before_spp': 'Цена до СПП',
+            'price_after_spp': 'Цена после СПП',
+            'spp_percent': 'СПП %',
+            'cancels_count': 'Отмены (шт - справочно)',
+            'returns_count': 'Возвраты (шт - справочно)'
+        }, inplace=True)
+        df_sales_grouped['has_sales'] = 1
 
-    df_merged = pd.merge(df_ads, df_sales_grouped, on=['Дата', 'id_товара', 'id_продавца'], how='outer')
+    # Объединение
+    if df_ads.empty:
+        df_merged = df_sales_grouped.copy()
+        df_merged['has_ads'] = 0
+        df_merged['Тип РК'] = 'Органика (без рекламы)'
+        df_merged['Флаг CPC'] = '-'
+        df_merged['name'] = np.nan
+        for col in ['Заказов шт. (по РК)', 'Сумма заказов (по РК)', 'Корзины (всего)', 'Расходы на РК', 'Показы', 'Клики', 'Медианная позиция']:
+            df_merged[col] = np.nan
+    elif df_sales.empty:
+        df_merged = df_ads.copy()
+        df_merged['has_sales'] = 0
+        for col in ['Заказов шт. (всего - справочно)', 'Сумма заказов (всего - справочно)', 'Сумма выкупов (всего - справочно)',
+                    'Отмены (шт - справочно)', 'Возвраты (шт - справочно)', 'Цена до СПП', 'Цена после СПП', 'СПП %']:
+            df_merged[col] = np.nan
+    else:
+        df_merged = pd.merge(df_ads, df_sales_grouped, on=['Дата', 'id_товара', 'id_продавца'], how='outer', indicator=True)
+        df_merged['has_ads'] = np.where(df_merged['_merge'].isin(['left_only', 'both']), 1, 0)
+        df_merged['has_sales'] = np.where(df_merged['_merge'].isin(['right_only', 'both']), 1, 0)
+        df_merged.drop(columns=['_merge'], inplace=True)
 
-    mapping_name = df_ads.dropna(subset=['name']).drop_duplicates(subset=['id_продавца']).set_index('id_продавца')['name'].to_dict()
-    df_merged['name'] = df_merged['name'].fillna(df_merged['id_продавца'].map(mapping_name))
-    df_merged['name'] = df_merged['name'].fillna('Продавец ' + df_merged['id_продавца'].astype(str))
+    # Привязка имени продавца / бренда в lowercase (Вариант 1):
+    if 'name' not in df_merged.columns:
+        df_merged['name'] = np.nan
+    df_merged['name'] = df_merged['name'].replace({'': np.nan, 'nan': np.nan, 'none': np.nan, 'null': np.nan})
+    df_merged['name'] = df_merged['name'].fillna(df_merged['id_товара'].map(mapping_item))
+    df_merged['name'] = df_merged['name'].fillna(df_merged['id_продавца'].map(mapping_supp))
+    df_merged['name'] = df_merged['name'].fillna(df_merged['id_продавца'].astype(str))
+    df_merged['name'] = df_merged['name'].astype(str).str.lower().str.strip()
 
     df_merged['Тип РК'] = df_merged['Тип РК'].fillna('Органика (без рекламы)')
     df_merged['Флаг CPC'] = df_merged['Флаг CPC'].fillna('-')
 
-    ref_cols = [
-        'Заказов шт. (всего - справочно)', 'Сумма заказов (всего - справочно)', 
-        'Сумма выкупов (всего - справочно)', 'Отмены (шт - справочно)', 'Возвраты (шт - справочно)'
-    ]
-    for col in ref_cols:
-        if col in df_merged.columns:
-            df_merged[col] = pd.to_numeric(df_merged[col], errors='coerce').fillna(0)
-            
-    ad_cols = [
-        'Заказов шт. (по РК)', 'Сумма заказов (по РК)', 'Корзины (всего)', 
-        'Расходы на РК', 'Показы', 'Клики', 'Медианная позиция'
-    ]
-    for col in ad_cols:
-        if col in df_merged.columns:
-            df_merged[col] = pd.to_numeric(df_merged[col], errors='coerce').fillna(0)
+    # Расчет Веса РК для аллокации продаж:
+    ad_exp = pd.to_numeric(df_merged['Расходы на РК'], errors='coerce').fillna(0)
+    total_exp = df_merged.groupby(['Дата', 'id_товара', 'id_продавца'])['Расходы на РК'].transform(lambda s: pd.to_numeric(s, errors='coerce').fillna(0).sum())
+    count_camps = df_merged.groupby(['Дата', 'id_товара', 'id_продавца'])['id_товара'].transform('count')
 
-    df_merged['Общие расходы товара за день'] = df_merged.groupby(['Дата', 'id_товара', 'id_продавца'])['Расходы на РК'].transform('sum')
-    count_campaigns = df_merged.groupby(['Дата', 'id_товара', 'id_продавца'])['Расходы на РК'].transform('count')
     df_merged['Вес РК'] = np.where(
-        df_merged['Общие расходы товара за день'] > 0, 
-        df_merged['Расходы на РК'] / df_merged['Общие расходы товара за день'], 
-        1.0 / count_campaigns
+        df_merged['has_ads'] == 0,
+        1.0,
+        np.where(
+            total_exp > 0,
+            ad_exp / total_exp,
+            1.0 / count_camps
+        )
     )
 
-    df_merged['Заказов шт. (всего)'] = df_merged['Заказов шт. (всего - справочно)'] * df_merged['Вес РК']
-    df_merged['Сумма заказов (всего)'] = df_merged['Сумма заказов (всего - справочно)'] * df_merged['Вес РК']
-    df_merged['Сумма выкупов'] = df_merged['Сумма выкупов (всего - справочно)'] * df_merged['Вес РК']
-    df_merged['Отмены шт.'] = df_merged.get('Отмены (шт - справочно)', 0) * df_merged['Вес РК']
-    df_merged['Возвраты шт.'] = df_merged.get('Возвраты (шт - справочно)', 0) * df_merged['Вес РК']
+    # Аллокация продаж (только если has_sales == 1):
+    has_sales_mask = df_merged['has_sales'] == 1
+    for ref_col, out_col in [
+        ('Заказов шт. (всего - справочно)', 'Заказов шт. (всего)'),
+        ('Сумма заказов (всего - справочно)', 'Сумма заказов (всего)'),
+        ('Сумма выкупов (всего - справочно)', 'Сумма выкупов'),
+        ('Отмены (шт - справочно)', 'Отмены шт.'),
+        ('Возвраты (шт - справочно)', 'Возвраты шт.')
+    ]:
+        if ref_col in df_merged.columns:
+            df_merged[out_col] = np.where(has_sales_mask, pd.to_numeric(df_merged[ref_col], errors='coerce').fillna(0) * df_merged['Вес РК'], np.nan)
+        else:
+            df_merged[out_col] = np.nan
+
+    for p_col in ['Цена до СПП', 'Цена после СПП', 'СПП %']:
+        if p_col in df_merged.columns:
+            df_merged[p_col] = np.where(has_sales_mask, pd.to_numeric(df_merged[p_col], errors='coerce'), np.nan)
+        else:
+            df_merged[p_col] = np.nan
+
+    # Очистка рекламных метрик если нет рекламы (has_ads == 0)
+    has_ads_mask = df_merged['has_ads'] == 1
+    for ad_col in ['Расходы на РК', 'Показы', 'Клики', 'Корзины (всего)', 'Заказов шт. (по РК)', 'Сумма заказов (по РК)', 'Медианная позиция']:
+        if ad_col in df_merged.columns:
+            df_merged[ad_col] = np.where(has_ads_mask, pd.to_numeric(df_merged[ad_col], errors='coerce'), np.nan)
+        else:
+            df_merged[ad_col] = np.nan
+
+    # Агрегация по группам ['Дата', 'id_продавца', 'Тип РК', 'Флаг CPC', 'name']
+    group_cols = ['Дата', 'id_продавца', 'Тип РК', 'Флаг CPC', 'name']
 
     agg_final = {
-        'Расходы на РК': 'sum', 'Показы': 'sum', 'Клики': 'sum', 'Корзины (всего)': 'sum',
-        'Заказов шт. (по РК)': 'sum', 'Сумма заказов (по РК)': 'sum',
-        'Заказов шт. (всего)': 'sum', 'Сумма заказов (всего)': 'sum', 'Сумма выкупов': 'sum',
-        'Отмены шт.': 'sum', 'Возвраты шт.': 'sum',
-        'Медианная позиция': 'mean', 'Цена до СПП': 'mean', 'Цена после СПП': 'mean', 'СПП %': 'mean'
+        'has_ads': 'max',
+        'has_sales': 'max',
+        'Расходы на РК': lambda s: s.sum(min_count=1),
+        'Показы': lambda s: s.sum(min_count=1),
+        'Клики': lambda s: s.sum(min_count=1),
+        'Корзины (всего)': lambda s: s.sum(min_count=1),
+        'Заказов шт. (по РК)': lambda s: s.sum(min_count=1),
+        'Сумма заказов (по РК)': lambda s: s.sum(min_count=1),
+        'Заказов шт. (всего)': lambda s: s.sum(min_count=1),
+        'Сумма заказов (всего)': lambda s: s.sum(min_count=1),
+        'Сумма выкупов': lambda s: s.sum(min_count=1),
+        'Отмены шт.': lambda s: s.sum(min_count=1),
+        'Возвраты шт.': lambda s: s.sum(min_count=1),
+        'Медианная позиция': 'mean',
+        'Цена до СПП': 'mean',
+        'Цена после СПП': 'mean',
+        'СПП %': 'mean'
     }
-    
-    group_cols = ['Дата', 'id_продавца', 'Тип РК', 'Флаг CPC', 'name']
+
     table_1 = df_merged.groupby(group_cols, as_index=False).agg(agg_final)
-    
-    for col in agg_final.keys():
-        table_1[col] = pd.to_numeric(table_1[col], errors='coerce').fillna(0)
-    
+
+    # Сохранение в SQLite
     table_1.to_sql('merged_data', conn, if_exists='replace', index=False)
     cursor = conn.cursor()
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_merged_date ON merged_data ("Дата")')

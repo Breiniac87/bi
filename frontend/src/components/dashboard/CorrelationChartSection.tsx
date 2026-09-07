@@ -357,7 +357,7 @@ export function CorrelationChartSection({
                               <div key={p.dataKey} className="flex items-center gap-2 text-sm">
                                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
                                 <span className="font-medium">{p.name}:</span>
-                                <span>{formatMetricValue(p.value, currentMetric)}</span>
+                                <span>{p.value === null || p.value === undefined ? 'Нет данных' : formatMetricValue(p.value, currentMetric)}</span>
                               </div>
                             );
                           })}
@@ -374,7 +374,7 @@ export function CorrelationChartSection({
                       {showValues && (
                         <LabelList
                           position="top"
-                          formatter={(val: any) => formatMetricValue(val, metric1)}
+                          formatter={(val: any) => val === null || val === undefined ? '' : formatMetricValue(val, metric1)}
                           style={{ fontSize: 10, fill: 'currentColor' }}
                         />
                       )}
@@ -387,12 +387,12 @@ export function CorrelationChartSection({
                       stroke={color2}
                       strokeWidth={2.5}
                       dot={showValues ? { r: 3 } : false}
-                      connectNulls
+                      connectNulls={false}
                     >
                       {showValues && (
                         <LabelList
                           position="top"
-                          formatter={(val: any) => formatMetricValue(val, metric2)}
+                          formatter={(val: any) => val === null || val === undefined ? '' : formatMetricValue(val, metric2)}
                           style={{ fontSize: 10, fill: 'currentColor' }}
                         />
                       )}
@@ -408,12 +408,12 @@ export function CorrelationChartSection({
                       stroke={color1}
                       strokeWidth={2.5}
                       dot={showValues ? { r: 3 } : false}
-                      connectNulls
+                      connectNulls={false}
                     >
                       {showValues && (
                         <LabelList
                           position="top"
-                          formatter={(val: any) => formatMetricValue(val, metric1)}
+                          formatter={(val: any) => val === null || val === undefined ? '' : formatMetricValue(val, metric1)}
                           style={{ fontSize: 10, fill: 'currentColor' }}
                         />
                       )}
@@ -426,12 +426,12 @@ export function CorrelationChartSection({
                       stroke={color2}
                       strokeWidth={2.5}
                       dot={showValues ? { r: 3 } : false}
-                      connectNulls
+                      connectNulls={false}
                     >
                       {showValues && (
                         <LabelList
                           position="top"
-                          formatter={(val: any) => formatMetricValue(val, metric2)}
+                          formatter={(val: any) => val === null || val === undefined ? '' : formatMetricValue(val, metric2)}
                           style={{ fontSize: 10, fill: 'currentColor' }}
                         />
                       )}
@@ -449,12 +449,12 @@ export function CorrelationChartSection({
                       fill={`url(#color-${id}-1)`}
                       strokeWidth={2}
                       dot={showValues ? { r: 3 } : false}
-                      connectNulls
+                      connectNulls={false}
                     >
                       {showValues && (
                         <LabelList
                           position="top"
-                          formatter={(val: any) => formatMetricValue(val, metric1)}
+                          formatter={(val: any) => val === null || val === undefined ? '' : formatMetricValue(val, metric1)}
                           style={{ fontSize: 10, fill: 'currentColor' }}
                         />
                       )}
@@ -469,12 +469,12 @@ export function CorrelationChartSection({
                       fill={`url(#color-${id}-2)`}
                       strokeWidth={2}
                       dot={showValues ? { r: 3 } : false}
-                      connectNulls
+                      connectNulls={false}
                     >
                       {showValues && (
                         <LabelList
                           position="top"
-                          formatter={(val: any) => formatMetricValue(val, metric2)}
+                          formatter={(val: any) => val === null || val === undefined ? '' : formatMetricValue(val, metric2)}
                           style={{ fontSize: 10, fill: 'currentColor' }}
                         />
                       )}

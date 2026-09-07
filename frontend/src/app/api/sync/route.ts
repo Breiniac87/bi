@@ -130,7 +130,7 @@ export async function GET() {
   const runner = getEtlRunner(['--status', '--json']);
 
   return new Promise<NextResponse>((resolve) => {
-    execFile(runner.cmd, runner.args, { cwd: runner.cwd }, (error, stdout, stderr) => {
+    execFile(runner.cmd, runner.args, { cwd: runner.cwd, timeout: 30000, maxBuffer: 5 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         console.error('Error fetching sync status:', error, stderr);
         return resolve(NextResponse.json({ success: false, error: stderr || error.message }, { status: 500 }));
@@ -176,37 +176,45 @@ export async function POST(request: Request) {
   isSyncRunning = true;
 
   return new Promise<NextResponse>((resolve) => {
-    execFile(runner.cmd, runner.args, { cwd: runner.cwd }, (error, stdout, stderr) => {
-      isSyncRunning = false;
+    try {
+      execFile(runner.cmd, runner.args, { cwd: runner.cwd, timeout: 180000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+        isSyncRunning = false;
 
-      if (error) {
-        console.error('Error running sync:', error, stderr);
-        const parsed = safeJsonParse(stdout) || safeJsonParse(stderr);
-        const errMsg = parsed?.error || (stderr ? stderr.trim() : error.message);
-        return resolve(NextResponse.json({
-          success: false,
-          error: errMsg,
-          status: parsed?.status
-        }, { status: 400 }));
-      }
-      try {
-        const result = safeJsonParse(stdout);
-        if (result && result.success === false) {
+        if (error) {
+          console.error('Error running sync:', error, stderr);
+          const parsed = safeJsonParse(stdout) || safeJsonParse(stderr);
+          const errMsg = parsed?.error || (stderr ? stderr.trim() : error.message);
           return resolve(NextResponse.json({
             success: false,
-            error: result.error || 'Ошибка валидации данных',
-            status: result.status
+            error: errMsg,
+            status: parsed?.status
           }, { status: 400 }));
         }
-        const updatedData = getMetrics();
-        return resolve(NextResponse.json({
-          success: true,
-          syncResult: result,
-          data: updatedData
-        }));
-      } catch (parseErr) {
-        return resolve(NextResponse.json({ success: false, error: 'Failed to parse sync output', raw: stdout }, { status: 500 }));
-      }
-    });
+        try {
+          const result = safeJsonParse(stdout);
+          if (result && result.success === false) {
+            return resolve(NextResponse.json({
+              success: false,
+              error: result.error || 'Ошибка валидации данных',
+              status: result.status
+            }, { status: 400 }));
+          }
+          const updatedData = getMetrics();
+          return resolve(NextResponse.json({
+            success: true,
+            syncResult: result,
+            data: updatedData
+          }));
+        } catch (parseErr) {
+          return resolve(NextResponse.json({ success: false, error: 'Failed to parse sync output', raw: stdout }, { status: 500 }));
+        }
+      });
+    } catch (launchErr: any) {
+      isSyncRunning = false;
+      return resolve(NextResponse.json({
+        success: false,
+        error: launchErr?.message || 'Не удалось запустить процесс синхронизации'
+      }, { status: 500 }));
+    }
   });
 }
