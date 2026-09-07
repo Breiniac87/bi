@@ -96,21 +96,28 @@ jobs:
 
           Write-Host "✓ Промежуточный бандл $stage успешно сформирован."
 
+      - name: Extract Application Version
+        shell: pwsh
+        run: |
+          $ver = (Get-Content frontend/package.json | ConvertFrom-Json).version
+          Write-Host "Application Version: $ver"
+          echo "APP_VERSION=$ver" >> $env:GITHUB_ENV
+
       - name: Compile Installer with Inno Setup
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DSourceDir="..\dist_windows" windows\installer.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion="${{ env.APP_VERSION }}" /DSourceDir="..\dist_windows" windows\installer.iss
 
       - name: Upload Setup.exe as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: E-Commerce-Dashboard-Windows-Setup
-          path: release_windows/E-Commerce-Dashboard-Setup.exe
+          name: E-Commerce-Dashboard-Setup-v${{ env.APP_VERSION }}
+          path: release_windows/E-Commerce-Dashboard-Setup-v*.exe
           retention-days: 14
 
       - name: Publish to GitHub Releases (on Tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: release_windows/E-Commerce-Dashboard-Setup.exe
+          files: release_windows/E-Commerce-Dashboard-Setup-v*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
