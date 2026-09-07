@@ -55,6 +55,12 @@ jobs:
           npm install
           npm run build
 
+      - name: Compile Native Windows Launcher (.exe)
+        shell: cmd
+        run: |
+          rc.exe /fo windows\app_icon.res windows\app_icon.rc
+          cl.exe /O2 /W3 /DUNICODE /D_UNICODE windows\launcher.c windows\app_icon.res /Fe:windows\launcher.exe user32.lib shell32.lib wininet.lib shlwapi.lib /link /SUBSYSTEM:WINDOWS
+
       - name: Assemble Windows Standalone Bundle
         shell: pwsh
         run: |
@@ -81,7 +87,8 @@ jobs:
           $nodePath = (Get-Command node.exe).Source
           Copy-Item $nodePath "$stage\node.exe"
 
-          # 5. Скрипты запуска и иконка
+          # 5. Скрипты запуска, нативный лаунчер и иконка
+          Copy-Item "windows\launcher.exe" "$stage\launcher.exe"
           Copy-Item "windows\launch.bat" "$stage\launch.bat"
           Copy-Item "windows\launcher.vbs" "$stage\launcher.vbs"
           Copy-Item "windows\stop.bat" "$stage\stop.bat"
