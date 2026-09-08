@@ -5,11 +5,22 @@ import fs from 'fs';
 import { getMetrics } from '@/lib/db';
 
 let isSyncRunning = false;
+let syncStartedAt = 0;
+
+function isFile(p?: string | null): boolean {
+  if (!p) return false;
+  try {
+    const stat = fs.statSync(p);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+}
 
 function getProjectRoot(): string {
   let curr = process.cwd();
   for (let i = 0; i < 6; i++) {
-    if (fs.existsSync(path.join(curr, 'sync_local_to_sqlite.py'))) {
+    if (fs.existsSync(path.join(curr, 'sync_local_to_sqlite.py')) || fs.existsSync(path.join(curr, 'data'))) {
       return curr;
     }
     const parent = path.resolve(curr, '..');
@@ -19,19 +30,19 @@ function getProjectRoot(): string {
   return process.cwd();
 }
 
-function getPythonPath(projectRoot: string): string {
-  if (process.env.PYTHON_PATH && fs.existsSync(process.env.PYTHON_PATH)) {
+function getPythonPath(projectRoot: string): string | null {
+  if (process.env.PYTHON_PATH && isFile(process.env.PYTHON_PATH)) {
     return process.env.PYTHON_PATH;
   }
   const venvPythonWin = path.join(projectRoot, 'venv', 'Scripts', 'python.exe');
-  if (fs.existsSync(venvPythonWin)) {
+  if (isFile(venvPythonWin)) {
     return venvPythonWin;
   }
   const venvPython = path.join(projectRoot, 'venv', 'bin', 'python3');
-  if (fs.existsSync(venvPython)) {
+  if (isFile(venvPython)) {
     return venvPython;
   }
-  return process.platform === 'win32' ? 'python' : 'python3';
+  return null;
 }
 
 interface EtlRunner {
@@ -43,10 +54,10 @@ interface EtlRunner {
 function getEtlRunner(additionalArgs: string[]): EtlRunner {
   const cwd = process.cwd();
   const root = getProjectRoot();
-  const exeName = 'sync_local_to_sqlite.exe';
+  const exeName = process.platform === 'win32' ? 'sync_local_to_sqlite.exe' : 'sync_local_to_sqlite';
 
-  // 1. Проверяем явно заданную переменную окружения для бинарника
-  if (process.env.ETL_BIN_PATH && fs.existsSync(/*turbopackIgnore: true*/ process.env.ETL_BIN_PATH)) {
+  // 1. Проверяем явно заданную переменную окружения для бинарника (только если это действительно исполняемый файл)
+  if (process.env.ETL_BIN_PATH && isFile(process.env.ETL_BIN_PATH)) {
     return {
       cmd: process.env.ETL_BIN_PATH,
       args: additionalArgs,
@@ -54,15 +65,36 @@ function getEtlRunner(additionalArgs: string[]): EtlRunner {
     };
   }
 
-  // 2. Проверяем автономный скомпилированный бинарник внутри бандла (../etl/...)
+  // 2. Приоритет Python-скрипта (работает за 0.8с против 30с у PyInstaller на macOS)
+  const pythonPath = getPythonPath(root);
+  const scriptCandidates = [
+    path.join(root, 'sync_local_to_sqlite.py'),
+    path.resolve(cwd, '../etl/sync_local_to_sqlite.py'),
+    path.resolve(cwd, './etl/sync_local_to_sqlite.py'),
+    path.resolve(cwd, 'sync_local_to_sqlite.py')
+  ];
+
+  if (pythonPath) {
+    for (const sc of scriptCandidates) {
+      if (isFile(sc)) {
+        return {
+          cmd: pythonPath,
+          args: [sc, ...additionalArgs],
+          cwd: path.dirname(sc)
+        };
+      }
+    }
+  }
+
+  // 3. Проверяем автономный скомпилированный бинарник внутри бандла
   const bundledCandidates = [
     path.resolve(cwd, `../etl/sync_local_to_sqlite/${exeName}`),
-    path.resolve(cwd, `../etl/${exeName}`),
     path.resolve(cwd, `./etl/sync_local_to_sqlite/${exeName}`),
+    path.resolve(cwd, `../etl/${exeName}`),
     path.resolve(cwd, `./etl/${exeName}`)
   ];
   for (const b of bundledCandidates) {
-    if (fs.existsSync(/*turbopackIgnore: true*/ b)) {
+    if (isFile(b)) {
       return {
         cmd: b,
         args: additionalArgs,
@@ -71,14 +103,14 @@ function getEtlRunner(additionalArgs: string[]): EtlRunner {
     }
   }
 
-  // 3. Проверяем скомпилированный бинарник в папке dist проекта
+  // 4. Проверяем скомпилированный бинарник в папке dist проекта
   const distCandidates = [
     path.resolve(root, `dist/sync_local_to_sqlite/${exeName}`),
     path.resolve(cwd, `../dist/sync_local_to_sqlite/${exeName}`),
     path.resolve(root, `dist/${exeName}`)
   ];
   for (const distBin of distCandidates) {
-    if (fs.existsSync(/*turbopackIgnore: true*/ distBin)) {
+    if (isFile(distBin)) {
       return {
         cmd: distBin,
         args: additionalArgs,
@@ -87,42 +119,43 @@ function getEtlRunner(additionalArgs: string[]): EtlRunner {
     }
   }
 
-  // 4. Fallback на Python скрипт (ETL_SCRIPT_PATH или sync_local_to_sqlite.py)
-  let scriptPath = '';
-  let scriptCwd = cwd;
-  if (process.env.ETL_SCRIPT_PATH && fs.existsSync(/*turbopackIgnore: true*/ process.env.ETL_SCRIPT_PATH)) {
-    scriptPath = process.env.ETL_SCRIPT_PATH;
-    scriptCwd = path.dirname(scriptPath);
-  } else {
-    const bundledScript = path.resolve(cwd, '../etl/sync_local_to_sqlite.py');
-    if (fs.existsSync(/*turbopackIgnore: true*/ bundledScript)) {
-      scriptPath = bundledScript;
-      scriptCwd = path.dirname(bundledScript);
-    } else {
-      scriptPath = path.join(root, 'sync_local_to_sqlite.py');
-      scriptCwd = root;
+  // 5. Системный python3 как запасной вариант
+  for (const sc of scriptCandidates) {
+    if (isFile(sc)) {
+      return {
+        cmd: process.platform === 'win32' ? 'python' : 'python3',
+        args: [sc, ...additionalArgs],
+        cwd: path.dirname(sc)
+      };
     }
   }
 
-  const pythonPath = getPythonPath(scriptCwd);
+  // Если ничего не найдено, возвращаем ожидаемый путь бинарника
+  const fallbackBin = path.resolve(cwd, `../etl/sync_local_to_sqlite/${exeName}`);
   return {
-    cmd: pythonPath,
-    args: [scriptPath, ...additionalArgs],
-    cwd: scriptCwd
+    cmd: fallbackBin,
+    args: additionalArgs,
+    cwd: path.dirname(fallbackBin)
   };
 }
 
-function safeJsonParse(text: string): any {
+function safeJsonParse(text?: string | null): any {
+  if (!text) return null;
   const trimmed = text.trim();
+  if (!trimmed) return null;
   try {
     return JSON.parse(trimmed);
   } catch {
     const start = trimmed.indexOf('{');
     const end = trimmed.lastIndexOf('}');
     if (start !== -1 && end !== -1 && end > start) {
-      return JSON.parse(trimmed.slice(start, end + 1));
+      try {
+        return JSON.parse(trimmed.slice(start, end + 1));
+      } catch {
+        return null;
+      }
     }
-    throw new Error('No valid JSON object found in output');
+    return null;
   }
 }
 
@@ -133,23 +166,44 @@ export async function GET() {
     execFile(runner.cmd, runner.args, { cwd: runner.cwd, timeout: 30000, maxBuffer: 5 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         console.error('Error fetching sync status:', error, stderr);
-        return resolve(NextResponse.json({ success: false, error: stderr || error.message }, { status: 500 }));
+        return resolve(NextResponse.json({
+          success: false,
+          error: stderr ? stderr.trim() : error.message,
+          runner
+        }, { status: 500 }));
       }
       try {
         const json = safeJsonParse(stdout);
+        if (json) {
+          return resolve(NextResponse.json({
+            success: true,
+            status: json,
+            isSyncRunning
+          }));
+        }
         return resolve(NextResponse.json({
-          success: true,
-          status: json,
-          isSyncRunning
-        }));
-      } catch (parseErr) {
-        return resolve(NextResponse.json({ success: false, error: 'Failed to parse status JSON', raw: stdout }, { status: 500 }));
+          success: false,
+          error: 'Не удалось распарсить статус БД',
+          raw: stdout
+        }, { status: 500 }));
+      } catch (parseErr: any) {
+        return resolve(NextResponse.json({
+          success: false,
+          error: parseErr.message,
+          raw: stdout
+        }, { status: 500 }));
       }
     });
   });
 }
 
 export async function POST(request: Request) {
+  // Сброс зависшего флага синхронизации, если прошло больше 120 секунд
+  if (isSyncRunning && Date.now() - syncStartedAt > 120000) {
+    console.warn('Сброс зависшего статуса синхронизации по таймауту');
+    isSyncRunning = false;
+  }
+
   if (isSyncRunning) {
     return NextResponse.json({
       success: false,
@@ -174,6 +228,7 @@ export async function POST(request: Request) {
 
   const runner = getEtlRunner(flags);
   isSyncRunning = true;
+  syncStartedAt = Date.now();
 
   return new Promise<NextResponse>((resolve) => {
     try {
@@ -190,6 +245,7 @@ export async function POST(request: Request) {
             status: parsed?.status
           }, { status: 400 }));
         }
+
         try {
           const result = safeJsonParse(stdout);
           if (result && result.success === false) {
@@ -199,14 +255,27 @@ export async function POST(request: Request) {
               status: result.status
             }, { status: 400 }));
           }
+
+          if (!result) {
+            return resolve(NextResponse.json({
+              success: false,
+              error: 'ETL процесс не вернул корректный JSON отчет',
+              raw: stdout || stderr
+            }, { status: 500 }));
+          }
+
           const updatedData = getMetrics();
           return resolve(NextResponse.json({
             success: true,
             syncResult: result,
             data: updatedData
           }));
-        } catch (parseErr) {
-          return resolve(NextResponse.json({ success: false, error: 'Failed to parse sync output', raw: stdout }, { status: 500 }));
+        } catch (parseErr: any) {
+          return resolve(NextResponse.json({
+            success: false,
+            error: parseErr.message,
+            raw: stdout
+          }, { status: 500 }));
         }
       });
     } catch (launchErr: any) {

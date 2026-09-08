@@ -12,12 +12,16 @@ __pycache__/
 *.tmp
 *.log
 *.app/
+macos/E-Commerce Dashboard
 dist/
 build/
 release_macos_m1/
 release_windows/
 dist_windows/
+release_macos/
+dist_macos/
 clean_template*
 config.json
+data/
 server.pid
 server.port

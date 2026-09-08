@@ -25,6 +25,10 @@ function getConfigPath(): string {
     const winCfg = path.join(appData, 'ECommerceDashboard', 'config.json');
     if (fs.existsSync(winCfg)) return winCfg;
   }
+  if (process.env.HOME) {
+    const macCfg = path.join(process.env.HOME, 'Library', 'Application Support', 'ECommerceDashboard', 'config.json');
+    if (fs.existsSync(macCfg)) return macCfg;
+  }
   return path.join(getProjectRoot(), 'config.json');
 }
 
@@ -58,13 +62,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, folder: targetPath, dryRun: true });
     }
 
-    const openCmd = `explorer "${path.normalize(targetPath)}"`;
+    const openCmd = process.platform === 'darwin'
+      ? `open "${targetPath}"`
+      : `explorer "${path.normalize(targetPath)}"`;
 
     return new Promise<NextResponse>((resolve) => {
       exec(openCmd, (error) => {
         if (error) {
           // На Windows explorer может вернуть код возврата 1 даже при успешном открытии папки
-          if (error.code === 1) {
+          if (process.platform === 'win32' && error.code === 1) {
             return resolve(NextResponse.json({ success: true, folder: targetPath }));
           }
           return resolve(NextResponse.json({ success: false, error: error.message }, { status: 500 }));

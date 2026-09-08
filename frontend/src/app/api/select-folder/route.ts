@@ -34,6 +34,10 @@ function getConfigPath(): string {
     const winCfg = path.join(appData, 'ECommerceDashboard', 'config.json');
     if (fs.existsSync(/*turbopackIgnore: true*/ winCfg)) return winCfg;
   }
+  if (process.env.HOME) {
+    const macCfg = path.join(process.env.HOME, 'Library', 'Application Support', 'ECommerceDashboard', 'config.json');
+    if (fs.existsSync(/*turbopackIgnore: true*/ macCfg)) return macCfg;
+  }
   return path.join(projectRoot, 'config.json');
 }
 
@@ -84,6 +88,23 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
   return `powershell -NoProfile -STA -NonInteractive -EncodedCommand ${encoded}`;
 }
 
+function getMacFolderDialogCmd(title: string, currentPath?: string): string {
+  const prompt = `Выберите папку с отчетами по ${title}`;
+  let defaultLoc = '';
+  if (currentPath && fs.existsSync(currentPath)) {
+    const escaped = currentPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    defaultLoc = ` default location POSIX file "${escaped}"`;
+  }
+  return `osascript -e 'try' -e 'set f to choose folder with prompt "${prompt}"${defaultLoc}' -e 'return POSIX path of f' -e 'on error' -e 'return "__CANCELED__"' -e 'end try'`;
+}
+
+function getFolderDialogCmd(title: string, currentPath?: string): string {
+  if (process.platform === 'darwin') {
+    return getMacFolderDialogCmd(title, currentPath);
+  }
+  return getWindowsFolderDialogCmd(title, currentPath);
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -102,7 +123,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const cmd = getWindowsFolderDialogCmd(title, currentPath);
+    const cmd = getFolderDialogCmd(title, currentPath);
 
     return new Promise<NextResponse>((resolve) => {
       exec(cmd, (error, stdout, stderr) => {

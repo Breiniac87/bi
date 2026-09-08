@@ -1,5 +1,5 @@
 'use client';
-import { ReactNode, useRef, useEffect, useMemo } from 'react';
+import { ReactNode, useRef, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -16,7 +16,7 @@ import {
   Line,
   LabelList
 } from 'recharts';
-import { Hash, TrendingUp, BarChart3, LineChart as LineChartIcon } from 'lucide-react';
+import { Hash, TrendingUp, BarChart3, LineChart as LineChartIcon, Search, X } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { sortedPlotMetrics, sortSellersAlphabetically, type DataRow } from '@/lib/metrics';
@@ -52,9 +52,24 @@ export function ComparativeChartSection({
   const [sellers, setSellers] = useLocalStorage<string[]>(`dashboard_${id}_sellers`, allSellers.slice(0, 3));
   const [metric, setMetric] = useLocalStorage<string>(`dashboard_${id}_metric`, id === 'g1' ? 'Сумма заказов (всего)' : 'Заказов шт. (всего)');
 
-  // Построение сводной матрицы дат для выбранных продавцов
+  // Ограничение по выбору одновременных продавцов: не более 10
+  const MAX_SELECTED_SELLERS = 10;
+
+  // Активные продавцы (строго не более 10 для предотвращения переполнения графика)
+  const activeSellers = useMemo(() => {
+    return (sellers || []).slice(0, MAX_SELECTED_SELLERS);
+  }, [sellers]);
+
+  // Защита: если в сохраненном состоянии оказалось больше 10 продавцов, автоматически обрезаем
+  useEffect(() => {
+    if (sellers && sellers.length > MAX_SELECTED_SELLERS) {
+      setSellers(sellers.slice(0, MAX_SELECTED_SELLERS));
+    }
+  }, [sellers, setSellers]);
+
+  // Построение сводной матрицы дат для выбранных продавцов (максимум 10)
   const datesMap = new Map<string, DataRow>();
-  sellers.forEach(seller => {
+  activeSellers.forEach(seller => {
     const sellerData = getSellerDailyData(seller);
     sellerData.forEach((row: DataRow) => {
       const dStr = row['Дата'] as string;
@@ -83,9 +98,17 @@ export function ComparativeChartSection({
     if (metricsScrollRef.current) metricsScrollRef.current.scrollTop = 0;
   }, [filterState]);
 
+  const [sellerSearch, setSellerSearch] = useState('');
+
   const sortedSellers = useMemo(() => {
     return sortSellersAlphabetically(allSellers);
   }, [allSellers]);
+
+  const filteredSellers = useMemo(() => {
+    if (!sellerSearch.trim()) return sortedSellers;
+    const q = sellerSearch.toLowerCase().trim();
+    return sortedSellers.filter(s => s.toLowerCase().includes(q));
+  }, [sortedSellers, sellerSearch]);
 
   return (
     <div className={`space-y-4 ${className}`}>
@@ -177,29 +200,80 @@ export function ComparativeChartSection({
                         <span className="text-xs font-semibold text-muted-foreground">
                           Продавцы:
                         </span>
-                        <span className="text-[10px] text-muted-foreground/80 bg-muted px-1.5 py-0.2 rounded font-mono">
-                          {sellers.length}/{sortedSellers.length}
+                        <span className={cn(
+                          "text-[10px] px-1.5 py-0.2 rounded font-mono font-medium",
+                          activeSellers.length >= MAX_SELECTED_SELLERS
+                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                            : "text-muted-foreground/80 bg-muted"
+                        )}>
+                          {sellerSearch.trim()
+                            ? `${activeSellers.length}/${MAX_SELECTED_SELLERS} (${filteredSellers.length})`
+                            : `${activeSellers.length}/${MAX_SELECTED_SELLERS}`}
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => setSellers([...sortedSellers])}
+                          onClick={() => {
+                            if (sellerSearch.trim()) {
+                              const set = new Set([...activeSellers, ...filteredSellers]);
+                              setSellers(Array.from(set).slice(0, MAX_SELECTED_SELLERS));
+                            } else {
+                              setSellers(sortedSellers.slice(0, MAX_SELECTED_SELLERS));
+                            }
+                          }}
                           className="text-[11px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors"
-                          title="Выбрать всех продавцов"
+                          title={sellerSearch.trim() ? `Выбрать до ${MAX_SELECTED_SELLERS} найденных продавцов` : `Выбрать первые ${MAX_SELECTED_SELLERS} продавцов`}
                         >
-                          Все
+                          {sellerSearch.trim() ? "Выбрать 10" : "Топ-10"}
                         </button>
                         <span className="text-muted-foreground/30 text-[10px]">|</span>
                         <button
                           type="button"
-                          onClick={() => setSellers(sortedSellers.length > 0 ? [sortedSellers[0]] : [])}
+                          onClick={() => {
+                            if (sellerSearch.trim()) {
+                              const toRemove = new Set(filteredSellers);
+                              setSellers(activeSellers.filter(s => !toRemove.has(s)));
+                            } else {
+                              setSellers([]);
+                            }
+                          }}
                           className="text-[11px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors"
-                          title="Оставить одного продавца"
+                          title={sellerSearch.trim() ? "Снять выбор с найденных продавцов" : "Снять выбор со всех продавцов"}
                         >
                           Сброс
                         </button>
                       </div>
+                    </div>
+
+                    {/* Предупреждение о достижении лимита в 10 продавцов */}
+                    {activeSellers.length >= MAX_SELECTED_SELLERS && (
+                      <div className="text-[10.5px] text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded mb-1.5 flex items-center justify-between">
+                        <span>Максимум 10 продавцов</span>
+                        <span className="text-[9.5px] opacity-75">снимите выбор для смены</span>
+                      </div>
+                    )}
+
+                    {/* Компактная строка поиска по вхождению */}
+                    <div className="relative mb-1.5">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/60 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={sellerSearch}
+                        onChange={(e) => setSellerSearch(e.target.value)}
+                        placeholder="Поиск по названию..."
+                        className="w-full h-7 pl-7 pr-7 text-xs bg-background/80 hover:bg-background focus:bg-background border border-border/60 rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground/60 transition-colors"
+                      />
+                      {sellerSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setSellerSearch('')}
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground p-0.5 rounded transition-colors"
+                          title="Очистить поиск"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
 
                     {/* Скролл-контейнер со строгой высотой строк */}
@@ -213,27 +287,41 @@ export function ComparativeChartSection({
                       )}
                     >
                       <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-x-2 gap-y-1 py-1">
-                        {sortedSellers.map(seller => {
-                          const isChecked = sellers.includes(seller);
+                        {filteredSellers.map(seller => {
+                          const isChecked = activeSellers.includes(seller);
+                          const isMaxReached = activeSellers.length >= MAX_SELECTED_SELLERS;
+                          const isDisabled = !isChecked && isMaxReached;
+
                           return (
                             <label
                               key={seller}
                               htmlFor={`${id}-${seller}`}
                               className={cn(
-                                "flex items-center space-x-2 px-2 py-1 rounded-md transition-colors cursor-pointer text-xs select-none min-h-[28px]",
+                                "flex items-center space-x-2 px-2 py-1 rounded-md transition-colors text-xs select-none min-h-[28px]",
+                                isDisabled ? "opacity-40 cursor-not-allowed text-muted-foreground" : "cursor-pointer",
                                 isChecked
                                   ? "bg-primary/10 text-primary font-medium"
-                                  : "hover:bg-muted/50 text-foreground/80"
+                                  : !isDisabled && "hover:bg-muted/50 text-foreground/80"
                               )}
-                              title={seller}
+                              title={
+                                isDisabled
+                                  ? `Достигнут лимит: максимум ${MAX_SELECTED_SELLERS} одновременных продавцов. Снимите выбор с другого продавца.`
+                                  : seller
+                              }
                             >
                               <Checkbox
                                 id={`${id}-${seller}`}
                                 className="shrink-0"
                                 checked={isChecked}
+                                disabled={isDisabled}
                                 onCheckedChange={(checked) => {
-                                  if (checked) setSellers([...sellers, seller]);
-                                  else setSellers(sellers.filter(s => s !== seller));
+                                  if (checked) {
+                                    if (activeSellers.length < MAX_SELECTED_SELLERS) {
+                                      setSellers([...activeSellers, seller]);
+                                    }
+                                  } else {
+                                    setSellers(activeSellers.filter(s => s !== seller));
+                                  }
                                 }}
                               />
                               <span className="truncate leading-tight">{seller}</span>
@@ -241,6 +329,11 @@ export function ComparativeChartSection({
                           );
                         })}
                       </div>
+                      {filteredSellers.length === 0 && (
+                        <div className="text-center py-4 text-xs text-muted-foreground">
+                          Продавцы не найдены
+                        </div>
+                      )}
                     </div>
                   </div>
                 }
@@ -305,11 +398,11 @@ export function ComparativeChartSection({
         )}
 
         <div className="w-full h-[500px]">
-          {sellers.length > 0 ? (
+          {activeSellers.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                 <defs>
-                  {sellers.map((seller, idx) => (
+                  {activeSellers.map((seller, idx) => (
                     <linearGradient key={`color-${id}-${idx}`} id={`color-${id}-${idx}`} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={chartColors[idx % chartColors.length]} stopOpacity={0.4} />
                       <stop offset="95%" stopColor={chartColors[idx % chartColors.length]} stopOpacity={0.0} />
@@ -348,7 +441,7 @@ export function ComparativeChartSection({
                   }}
                 />
                 <Legend />
-                {sellers.map((seller, idx) => {
+                {activeSellers.map((seller, idx) => {
                   const color = chartColors[idx % chartColors.length];
                   if (chartType === 'bar') {
                     return (
@@ -411,8 +504,16 @@ export function ComparativeChartSection({
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex h-full items-center justify-center bg-muted/10 rounded-lg text-muted-foreground">
-              Выберите продавцов сверху
+            <div className="flex flex-col h-full items-center justify-center bg-muted/10 border border-dashed border-border/60 rounded-lg p-6 text-center space-y-2">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                <BarChart3 className="w-5 h-5" />
+              </div>
+              <div className="text-sm font-medium text-foreground">
+                Продавцы не выбраны
+              </div>
+              <div className="text-xs text-muted-foreground max-w-sm">
+                Выберите от 1 до 10 продавцов в панели фильтра слева для построения сравнительного графика.
+              </div>
             </div>
           )}
         </div>

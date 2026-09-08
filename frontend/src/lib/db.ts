@@ -11,6 +11,9 @@ function getAppDataDir(): string {
   if (userProfile) {
     return path.join(userProfile, 'AppData', 'Roaming', 'ECommerceDashboard');
   }
+  if (process.env.HOME) {
+    return path.join(process.env.HOME, 'Library', 'Application Support', 'ECommerceDashboard');
+  }
   return '';
 }
 

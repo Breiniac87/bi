@@ -158,12 +158,16 @@ export function DataSyncPopover({ onDataUpdated }: DataSyncPopoverProps) {
   const handleSync = async () => {
     setIsLoading(true);
     setMessage(null);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
     try {
       const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({}),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
 
       if (data.success) {
@@ -215,9 +219,11 @@ export function DataSyncPopover({ onDataUpdated }: DataSyncPopoverProps) {
         });
       }
     } catch (err: any) {
+      clearTimeout(timeoutId);
+      const isAbort = err.name === 'AbortError';
       setMessage({
         type: 'error',
-        text: `Сетевая ошибка: ${err.message}`
+        text: isAbort ? 'Превышено время ожидания ответа сервера (60 сек).' : `Сетевая ошибка: ${err.message}`
       });
     } finally {
       setIsLoading(false);
@@ -227,12 +233,16 @@ export function DataSyncPopover({ onDataUpdated }: DataSyncPopoverProps) {
   const handleRebuildAll = async () => {
     setIsRebuilding(true);
     setMessage(null);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
     try {
       const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rebuildAll: true })
+        body: JSON.stringify({ rebuildAll: true }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
 
       if (data.success) {

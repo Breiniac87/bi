@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Calendar as CalendarIcon, Book, Database, BarChart3, Activity, Power, Loader2, Sparkles, Info, FileSpreadsheet, RefreshCw, AlertCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Book, Database, BarChart3, Activity, Power, Loader2, Sparkles, Info, FileSpreadsheet, RefreshCw, AlertCircle, AlertTriangle, CheckCircle2, X } from 'lucide-react';
 import { format, parse, isBefore, isAfter } from 'date-fns';
 import { useLocalStorage, useLocalLocalDate } from '@/hooks/use-local-storage';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -17,9 +17,10 @@ import { DataSyncPopover } from '@/components/DataSyncPopover';
 import { ComparativeChartSection } from '@/components/dashboard/ComparativeChartSection';
 import { CorrelationChartSection } from '@/components/dashboard/CorrelationChartSection';
 import { APP_VERSION } from '@/lib/version';
+import { cn } from '@/lib/utils';
 
 const CHART_COLORS = [
-  '#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#9333ea', '#0891b2', '#ea580c', '#4f46e5'
+  '#2563eb', '#16a34a', '#dc2626', '#d97706', '#9333ea', '#0891b2', '#ea580c', '#4f46e5', '#db2777', '#059669'
 ];
 
 const PREDEFINED_RK_TYPES = [
@@ -108,27 +109,15 @@ export function DashboardClient({ initialData }: { initialData: DataRow[] }) {
     }
   }, [allRkTypes, selectedRkTypes, setSelectedRkTypes]);
 
-  const initialDates = useMemo(() => getMinMaxDates(initialData), [initialData]);
-  const [dateFrom, setDateFrom] = useLocalLocalDate('dashboard_dateFrom', initialDates.minDate);
-  const [dateTo, setDateTo] = useLocalLocalDate('dashboard_dateTo', initialDates.maxDate);
+  const availableDates = useMemo(() => getMinMaxDates(data), [data]);
+  // По умолчанию даты сброшены (undefined), чтобы пользователь сам устанавливал диапазон дат
+  const [dateFrom, setDateFrom] = useLocalLocalDate('dashboard_dateFrom', undefined);
+  const [dateTo, setDateTo] = useLocalLocalDate('dashboard_dateTo', undefined);
 
-  // Если даты еще не установлены, но данные появились/загружены в БД, подставляем min и max
-  useEffect(() => {
-    if (data.length > 0 && (!dateFrom || !dateTo)) {
-      const { minDate, maxDate } = getMinMaxDates(data);
-      if (!dateFrom && minDate) setDateFrom(minDate);
-      if (!dateTo && maxDate) setDateTo(maxDate);
-    }
-  }, [data, dateFrom, dateTo, setDateFrom, setDateTo]);
-
-  // Обработчик обновления данных после синхронизации (подставляет min/max даты и выбирает все типы РК)
+  // Обработчик обновления данных после синхронизации (выбирает все типы РК, сохраняя выбор дат пользователя)
   const handleDataUpdated = useCallback((newData: DataRow[]) => {
     setData(newData);
     if (newData && newData.length > 0) {
-      const { minDate, maxDate } = getMinMaxDates(newData);
-      if (minDate) setDateFrom(minDate);
-      if (maxDate) setDateTo(maxDate);
-
       const typesFromNewData = newData
         .map(d => (d['Тип РК'] as string)?.trim())
         .filter((t): t is string => Boolean(t) && t !== 'null' && t !== 'undefined' && t !== '');
@@ -277,27 +266,56 @@ export function DashboardClient({ initialData }: { initialData: DataRow[] }) {
           <CardContent className="px-3 py-2 sm:px-4 sm:py-2 flex flex-wrap items-center justify-center gap-x-4 lg:gap-x-5 gap-y-2">
             {/* Блок 1: Период анализа */}
             <div className="flex flex-col items-center justify-center shrink-0">
-              <label className="text-[11px] font-medium text-muted-foreground text-center block mb-1 leading-none">
-                Период анализа
-              </label>
+              <div className="flex items-center justify-center gap-1.5 mb-1 leading-none">
+                <label className="text-[11px] font-medium text-muted-foreground text-center leading-none">
+                  Период анализа
+                </label>
+                {(dateFrom || dateTo) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDateFrom(undefined);
+                      setDateTo(undefined);
+                    }}
+                    className="text-[10px] text-muted-foreground/70 hover:text-foreground flex items-center gap-0.5 px-1 rounded hover:bg-muted transition-colors cursor-pointer"
+                    title="Сбросить выбранные даты"
+                  >
+                    <X className="w-2.5 h-2.5" /> Сброс
+                  </button>
+                )}
+              </div>
               <div className="flex items-center gap-1">
                 <Popover>
                   <PopoverTrigger className="flex items-center h-8 w-[114px] sm:w-[118px] justify-start rounded-md border border-input bg-background px-2 py-1 text-xs font-normal shadow-sm hover:bg-accent hover:text-accent-foreground text-left">
                     <CalendarIcon className="mr-1 h-3 w-3 text-muted-foreground shrink-0" />
-                    <span className="truncate">{dateFrom ? format(dateFrom, 'dd.MM.yyyy') : 'Дата С'}</span>
+                    <span className={cn("truncate", !dateFrom && "text-muted-foreground")}>
+                      {dateFrom ? format(dateFrom, 'dd.MM.yyyy') : 'Дата С'}
+                    </span>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={dateFrom} defaultMonth={dateFrom} onSelect={(val) => setDateFrom(val)} />
+                    <Calendar
+                      mode="single"
+                      selected={dateFrom}
+                      defaultMonth={dateFrom || availableDates.maxDate || availableDates.minDate || new Date()}
+                      onSelect={(val) => setDateFrom(val)}
+                    />
                   </PopoverContent>
                 </Popover>
                 <span className="text-muted-foreground text-[10px]">–</span>
                 <Popover>
                   <PopoverTrigger className="flex items-center h-8 w-[114px] sm:w-[118px] justify-start rounded-md border border-input bg-background px-2 py-1 text-xs font-normal shadow-sm hover:bg-accent hover:text-accent-foreground text-left">
                     <CalendarIcon className="mr-1 h-3 w-3 text-muted-foreground shrink-0" />
-                    <span className="truncate">{dateTo ? format(dateTo, 'dd.MM.yyyy') : 'Дата ПО'}</span>
+                    <span className={cn("truncate", !dateTo && "text-muted-foreground")}>
+                      {dateTo ? format(dateTo, 'dd.MM.yyyy') : 'Дата ПО'}
+                    </span>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={dateTo} defaultMonth={dateTo} onSelect={(val) => setDateTo(val)} />
+                    <Calendar
+                      mode="single"
+                      selected={dateTo}
+                      defaultMonth={dateTo || availableDates.maxDate || availableDates.minDate || new Date()}
+                      onSelect={(val) => setDateTo(val)}
+                    />
                   </PopoverContent>
                 </Popover>
               </div>

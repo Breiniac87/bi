@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useRef, useEffect, useMemo } from 'react';
+import { ReactNode, useRef, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
@@ -16,7 +16,7 @@ import {
   Line,
   LabelList
 } from 'recharts';
-import { Hash, TrendingUp, BarChart3, LineChart as LineChartIcon } from 'lucide-react';
+import { Hash, TrendingUp, BarChart3, LineChart as LineChartIcon, Search, X } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { sortedPlotMetrics, sortSellersAlphabetically, type DataRow } from '@/lib/metrics';
@@ -80,9 +80,17 @@ export function CorrelationChartSection({
     if (m2ScrollRef.current) m2ScrollRef.current.scrollTop = 0;
   }, [filterState]);
 
+  const [sellerSearch, setSellerSearch] = useState('');
+
   const sortedSellers = useMemo(() => {
     return sortSellersAlphabetically(allSellers);
   }, [allSellers]);
+
+  const filteredSellers = useMemo(() => {
+    if (!sellerSearch.trim()) return sortedSellers;
+    const q = sellerSearch.toLowerCase().trim();
+    return sortedSellers.filter(s => s.toLowerCase().includes(q));
+  }, [sortedSellers, sellerSearch]);
 
   return (
     <div className={`space-y-4 ${className}`}>
@@ -174,6 +182,28 @@ export function CorrelationChartSection({
                       </span>
                     </div>
 
+                    {/* Компактная строка поиска по вхождению */}
+                    <div className="relative mb-1.5">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/60 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={sellerSearch}
+                        onChange={(e) => setSellerSearch(e.target.value)}
+                        placeholder="Поиск продавца..."
+                        className="w-full h-7 pl-7 pr-7 text-xs bg-background/80 hover:bg-background focus:bg-background border border-border/60 rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground/60 transition-colors"
+                      />
+                      {sellerSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setSellerSearch('')}
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground p-0.5 rounded transition-colors"
+                          title="Очистить поиск"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
                     <div
                       ref={sellerScrollRef}
                       className={cn(
@@ -188,7 +218,7 @@ export function CorrelationChartSection({
                         onValueChange={(val) => setPlayer(val || '')}
                         className="grid grid-cols-[repeat(auto-fill,minmax(115px,1fr))] gap-x-2 gap-y-1 py-1"
                       >
-                        {sortedSellers.map(s => {
+                        {filteredSellers.map(s => {
                           const isSelected = player === s;
                           return (
                             <label
@@ -208,6 +238,11 @@ export function CorrelationChartSection({
                           );
                         })}
                       </RadioGroup>
+                      {filteredSellers.length === 0 && (
+                        <div className="text-center py-4 text-xs text-muted-foreground">
+                          Продавцы не найдены
+                        </div>
+                      )}
                     </div>
                   </div>
                 }

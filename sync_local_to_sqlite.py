@@ -32,6 +32,8 @@ def get_app_support_dir():
     app_data = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
     if app_data:
         return os.path.join(app_data, "ECommerceDashboard")
+    if sys.platform == "darwin":
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "ECommerceDashboard")
     return os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "ECommerceDashboard")
 
 APP_SUPPORT_DIR = get_app_support_dir()
@@ -451,12 +453,10 @@ def process_ads_file(filepath, filename, conn, file_hash=None, mtime=None, size=
             supp_col = cand
             break
 
-    # Имя бренда / селлера в lowercase:
-    # Приоритет: 'name' -> 'seller_name' -> 'название селлера'
+    # Имя бренда / селлера в рекламе: строго из поля 'name'
     raw_name = pd.Series('', index=df.index)
-    for name_cand in ['name', 'seller_name', 'название селлера']:
-        if name_cand in df.columns:
-            raw_name = raw_name.replace('', np.nan).fillna(df[name_cand])
+    if 'name' in df.columns:
+        raw_name = raw_name.replace('', np.nan).fillna(df['name'])
 
     seller_name_cleaned = (
         raw_name.astype(str)
@@ -524,18 +524,16 @@ def process_sales_file(filepath, filename, conn, file_hash=None, mtime=None, siz
             supp_col = cand
             break
 
-    # Имя бренда / селлера в продажах (если есть brand__name или supplier__name):
-    raw_brand = pd.Series('', index=df.index)
-    for b_cand in ['brand__name', 'brand_name', 'brand', 'name', 'seller_name', 'supplier__name', 'supplier_name', 'название селлера']:
+    # Имя бренда / селлера в продажах:
+    # Строго из 'brand__name' или 'brand_name'. Если поле отсутствует или пустое — присваиваем "Продавцы без имени"
+    raw_brand = pd.Series(np.nan, index=df.index)
+    for b_cand in ['brand__name', 'brand_name']:
         if b_cand in df.columns:
-            raw_brand = raw_brand.replace('', np.nan).fillna(df[b_cand])
+            cleaned_col = df[b_cand].astype(str).str.strip().replace({'nan': np.nan, 'none': np.nan, 'null': np.nan, '': np.nan})
+            raw_brand = raw_brand.fillna(cleaned_col)
 
-    seller_name_cleaned = (
-        raw_brand.astype(str)
-        .str.strip()
-        .str.lower()
-        .replace({'nan': '', 'none': '', 'null': ''})
-    )
+    # Для заполненных брендов приводим к lowercase для сопоставления, для пустых присваиваем "Продавцы без имени"
+    seller_name_cleaned = raw_brand.str.lower().fillna('Продавцы без имени')
 
     sales_processed = pd.DataFrame({
         'source_file': filename,
@@ -592,19 +590,26 @@ def rebuild_merged_data(conn):
         df_ads['seller_name'] = df_ads['seller_name'].replace({'nan': np.nan, 'none': np.nan, 'null': np.nan, '': np.nan})
 
     if not df_sales.empty and 'seller_name' in df_sales.columns:
-        df_sales['seller_name'] = df_sales['seller_name'].astype(str).str.strip().str.lower()
+        df_sales['seller_name'] = df_sales['seller_name'].astype(str).str.strip()
         df_sales['seller_name'] = df_sales['seller_name'].replace({'nan': np.nan, 'none': np.nan, 'null': np.nan, '': np.nan})
+        is_unnamed = df_sales['seller_name'].str.lower().isin(['продавцы без имени', 'продавец без имени'])
+        df_sales.loc[is_unnamed, 'seller_name'] = 'Продавцы без имени'
+        df_sales.loc[~is_unnamed & df_sales['seller_name'].notna(), 'seller_name'] = df_sales.loc[~is_unnamed & df_sales['seller_name'].notna(), 'seller_name'].str.lower()
 
     # Построение справочников имен брендов из рекламы И продаж
     mapping_item = {}
     mapping_supp = {}
 
-    # Сначала из продаж
+    # Сначала из продаж (с приоритетом реальных брендов над "Продавцы без имени")
     if not df_sales.empty and 'seller_name' in df_sales.columns:
         valid_sales = df_sales[df_sales['seller_name'].notna() & (df_sales['seller_name'] != '')]
         if not valid_sales.empty:
             mapping_item.update(valid_sales.drop_duplicates(subset=['item_id']).set_index('item_id')['seller_name'].to_dict())
             mapping_supp.update(valid_sales.drop_duplicates(subset=['supplier_id']).set_index('supplier_id')['seller_name'].to_dict())
+            real_sales = valid_sales[valid_sales['seller_name'] != 'Продавцы без имени']
+            if not real_sales.empty:
+                mapping_item.update(real_sales.drop_duplicates(subset=['item_id']).set_index('item_id')['seller_name'].to_dict())
+                mapping_supp.update(real_sales.drop_duplicates(subset=['supplier_id']).set_index('supplier_id')['seller_name'].to_dict())
 
     # Реклама имеет приоритет при совпадении
     if not df_ads.empty and 'seller_name' in df_ads.columns:
@@ -680,14 +685,24 @@ def rebuild_merged_data(conn):
         df_merged['has_sales'] = np.where(df_merged['_merge'].isin(['right_only', 'both']), 1, 0)
         df_merged.drop(columns=['_merge'], inplace=True)
 
-    # Привязка имени продавца / бренда в lowercase (Вариант 1):
+    # Привязка имени продавца / бренда:
     if 'name' not in df_merged.columns:
         df_merged['name'] = np.nan
     df_merged['name'] = df_merged['name'].replace({'': np.nan, 'nan': np.nan, 'none': np.nan, 'null': np.nan})
     df_merged['name'] = df_merged['name'].fillna(df_merged['id_товара'].map(mapping_item))
     df_merged['name'] = df_merged['name'].fillna(df_merged['id_продавца'].map(mapping_supp))
-    df_merged['name'] = df_merged['name'].fillna(df_merged['id_продавца'].astype(str))
-    df_merged['name'] = df_merged['name'].astype(str).str.lower().str.strip()
+    df_merged['name'] = df_merged['name'].fillna('Продавцы без имени')
+    df_merged['name'] = df_merged['name'].astype(str).str.strip()
+
+    # Если имя продавца - числовой ID, дефис или пустое, присваиваем "Продавцы без имени"
+    df_merged['name'] = df_merged['name'].apply(
+        lambda x: 'Продавцы без имени' if not x or str(x).isdigit() or str(x).lower() in ['', 'nan', 'none', 'null', '-'] else x
+    )
+
+    # Приводим к красивому регистру: "Продавцы без имени" с заглавной буквы
+    df_merged['name'] = df_merged['name'].apply(
+        lambda x: 'Продавцы без имени' if str(x).lower() in ['продавцы без имени', 'продавец без имени', 'продавец/продавци без имени'] else str(x).lower()
+    )
 
     df_merged['Тип РК'] = df_merged['Тип РК'].fillna('Органика (без рекламы)')
     df_merged['Флаг CPC'] = df_merged['Флаг CPC'].fillna('-')
@@ -851,6 +866,16 @@ def sync_category(category, folder_path, conn):
     cursor = conn.cursor()
     table_name = 'ads' if category == 'ads' else 'sales'
     process_fn = process_ads_file if category == 'ads' else process_sales_file
+
+    if not folder_path or not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+        return {
+            'new_files': [],
+            'modified_files': [],
+            'deleted_files': [],
+            'renamed_files': [],
+            'skipped_duplicates': [],
+            'rows_added': 0
+        }
 
     candidate_filenames = find_candidate_files(folder_path)
 
