@@ -80,13 +80,8 @@ jobs:
           # 2. Упаковка скомпилированного ETL
           Copy-Item -Recurse -Force "dist\sync_local_to_sqlite" "$stage\etl\sync_local_to_sqlite"
 
-          # 3. Упаковка Next.js Standalone сервера (включая скрытые папки .next)
-          Get-ChildItem -Force "frontend\.next\standalone\*" | Copy-Item -Destination "$stage\app" -Recurse -Force
-          New-Item -ItemType Directory -Force -Path "$stage\app\.next\static" | Out-Null
-          Copy-Item -Recurse -Force "frontend\.next\static\*" "$stage\app\.next\static\"
-          if (Test-Path "frontend\public") {
-              Copy-Item -Recurse -Force "frontend\public" "$stage\app\public"
-          }
+          # 3. Упаковка Next.js Standalone сервера и статических ассетов (CSS/JS)
+          node scripts/assemble_app.js "$stage\app"
 
           # 4. Упаковка автономного node.exe в корень портативной папки
           $nodePath = (Get-Command node.exe).Source

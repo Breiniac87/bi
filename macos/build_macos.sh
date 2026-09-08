@@ -68,14 +68,8 @@ assemble_app_bundle() {
     cp "$DIR/E-Commerce Dashboard" "$TARGET_APP/Contents/MacOS/E-Commerce Dashboard"
     chmod +x "$TARGET_APP/Contents/MacOS/E-Commerce Dashboard"
 
-    # Next.js Standalone (копируем все файлы включая скрытую папку .next)
-    cp -R "$PROJECT_ROOT/frontend/.next/standalone/." "$TARGET_APP/Contents/Resources/app/"
-    mkdir -p "$TARGET_APP/Contents/Resources/app/.next/static"
-    cp -R "$PROJECT_ROOT/frontend/.next/static/"* "$TARGET_APP/Contents/Resources/app/.next/static/"
-    if [ -d "$PROJECT_ROOT/frontend/public" ]; then
-        mkdir -p "$TARGET_APP/Contents/Resources/app/public"
-        cp -R "$PROJECT_ROOT/frontend/public/"* "$TARGET_APP/Contents/Resources/app/public/"
-    fi
+    # Next.js Standalone (копируем все файлы включая скрытую папку .next и статику через скрипт)
+    node "$PROJECT_ROOT/scripts/assemble_app.js" "$TARGET_APP/Contents/Resources/app"
 
     # ETL движок (бинарник и скрипт)
     if [ -d "$PROJECT_ROOT/dist/sync_local_to_sqlite" ]; then

@@ -85,14 +85,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
-xcopy /e /h /i /y "%PROJECT_ROOT%\frontend\.next\standalone\*" "%STAGE_DIR%\app\" >nul
-mkdir "%STAGE_DIR%\app\.next\static"
-xcopy /e /i /y "%PROJECT_ROOT%\frontend\.next\static\*" "%STAGE_DIR%\app\.next\static\" >nul
-if exist "%PROJECT_ROOT%\frontend\public" (
-    mkdir "%STAGE_DIR%\app\public"
-    xcopy /e /i /y "%PROJECT_ROOT%\frontend\public\*" "%STAGE_DIR%\app\public\" >nul
+echo Упаковка Standalone сервера и статических ассетов (CSS/JS)...
+cd /d "%PROJECT_ROOT%"
+call node "%PROJECT_ROOT%\scripts\assemble_app.js" "%STAGE_DIR%\app"
+if errorlevel 1 (
+    echo [ОШИБКА] Ошибка при компоновке приложения Next.js.
+    pause
+    exit /b 1
 )
-echo [OK] Next.js Standalone собран.
+echo [OK] Next.js Standalone собран с полным комплектом стилей и ассетов.
 
 :: 6. Упаковка рантайма node.exe
 echo --- [4/6] Упаковка автономного node.exe ---
