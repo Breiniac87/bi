@@ -57,7 +57,7 @@ assemble_app_bundle() {
     # Info.plist
     cp "$DIR/Info.plist" "$TARGET_APP/Contents/Info.plist"
     # Замена версии в Info.plist
-    sed -i '' "s/1.0.2/$APP_VERSION/g" "$TARGET_APP/Contents/Info.plist" 2>/dev/null || true
+    sed -i '' "s/[0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}/$APP_VERSION/g" "$TARGET_APP/Contents/Info.plist" 2>/dev/null || true
 
     # Иконка
     if [ -f "$DIR/AppIcon.icns" ]; then

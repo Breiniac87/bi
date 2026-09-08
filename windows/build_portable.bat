@@ -30,7 +30,7 @@ if errorlevel 1 (
 )
 
 :: Определение версии программы
-set "APP_VERSION=1.0.2"
+set "APP_VERSION=1.0.3"
 for /f "tokens=2 delims=:, " %%a in ('findstr /r "\"version\":" "%PROJECT_ROOT%\frontend\package.json"') do (
     set "RAW_VER=%%~a"
     set "APP_VERSION=!RAW_VER:"=!"
