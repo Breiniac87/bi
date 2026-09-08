@@ -1,4 +1,4 @@
-name: Build Windows Release
+name: Build Windows Portable Release
 
 on:
   workflow_dispatch:
@@ -10,8 +10,8 @@ on:
       - 'v*'
 
 jobs:
-  build-windows:
-    name: Build Windows Setup.exe
+  build-portable:
+    name: Build Windows Portable Package
     runs-on: windows-latest
 
     steps:
@@ -31,10 +31,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Install Inno Setup
-        run: |
-          choco install innosetup --no-progress
 
       - name: Install Python Dependencies & PyInstaller
         run: |
@@ -59,23 +55,32 @@ jobs:
         shell: cmd
         run: |
           rc.exe /fo windows\app_icon.res windows\app_icon.rc
-          cl.exe /O2 /W3 /DUNICODE /D_UNICODE windows\launcher.c windows\app_icon.res /Fe:windows\launcher.exe user32.lib shell32.lib wininet.lib shlwapi.lib /link /SUBSYSTEM:WINDOWS
+          cl.exe /O2 /W3 /DUNICODE /D_UNICODE windows\launcher.c windows\app_icon.res /Fe:"windows\launcher.exe" user32.lib shell32.lib wininet.lib shlwapi.lib /link /SUBSYSTEM:WINDOWS
 
-      - name: Assemble Windows Standalone Bundle
+      - name: Extract Application Version
         shell: pwsh
         run: |
-          $stage = "dist_windows"
-          $release = "release_windows"
-          New-Item -ItemType Directory -Force -Path "$stage\app", "$stage\etl", $release | Out-Null
+          $ver = (Get-Content frontend/package.json | ConvertFrom-Json).version
+          Write-Host "Application Version: $ver"
+          "APP_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-          # 1. Чистые шаблоны БД и конфигурации
+      - name: Assemble Windows Portable Bundle
+        shell: pwsh
+        run: |
+          $stage = "dist_windows\E-Commerce-Dashboard-Portable"
+          $release = "release_windows"
+          New-Item -ItemType Directory -Force -Path "$stage\app", "$stage\etl", "$stage\data\ads", "$stage\data\sales", $release | Out-Null
+
+          # 1. Шаблоны БД и конфигурации
           python -c "import sync_local_to_sqlite; sync_local_to_sqlite.init_db(r'$stage\template.db')"
+          Copy-Item "$stage\template.db" "$stage\data\dashboard.db"
           @{ ads_dir = ""; sales_dir = "" } | ConvertTo-Json | Set-Content "$stage\template_config.json" -Encoding UTF8
+          Copy-Item "$stage\template_config.json" "$stage\data\config.json"
 
           # 2. Упаковка скомпилированного ETL
           Copy-Item -Recurse -Force "dist\sync_local_to_sqlite" "$stage\etl\sync_local_to_sqlite"
 
-          # 3. Упаковка Next.js Standalone сервера (включая скрытые папки .next)
+          # 3. Упаковка Next.js Standalone сервера
           Get-ChildItem -Force "frontend\.next\standalone\*" | Copy-Item -Destination "$stage\app" -Recurse -Force
           New-Item -ItemType Directory -Force -Path "$stage\app\.next\static" | Out-Null
           Copy-Item -Recurse -Force "frontend\.next\static\*" "$stage\app\.next\static\"
@@ -83,41 +88,37 @@ jobs:
               Copy-Item -Recurse -Force "frontend\public" "$stage\app\public"
           }
 
-          # 4. Упаковка автономного node.exe
+          # 4. Упаковка рантайма node.exe
           $nodePath = (Get-Command node.exe).Source
           Copy-Item $nodePath "$stage\node.exe"
 
-          # 5. Скрипты запуска, нативный лаунчер и иконка
-          Copy-Item "windows\launcher.exe" "$stage\launcher.exe"
-          Copy-Item "windows\launch.bat" "$stage\launch.bat"
-          Copy-Item "windows\launcher.vbs" "$stage\launcher.vbs"
-          Copy-Item "windows\stop.bat" "$stage\stop.bat"
+          # 5. Исполняемый файл лаунчера, скрипты запуска, памятка и иконка
+          Copy-Item "windows\launcher.exe" "$stage\E-Commerce Dashboard.exe"
+          Copy-Item "windows\Запустить Дашборд.bat" "$stage\Запустить Дашборд.bat"
+          Copy-Item "windows\Остановить.bat" "$stage\Остановить.bat"
+          Copy-Item "windows\ИНСТРУКЦИЯ.txt" "$stage\ИНСТРУКЦИЯ.txt"
           Copy-Item "windows\app_icon.ico" "$stage\app_icon.ico"
 
-          Write-Host "✓ Промежуточный бандл $stage успешно сформирован."
+          Write-Host "✓ Портативная папка $stage успешно сформирована."
 
-      - name: Extract Application Version
+      - name: Compress to Portable ZIP Archive
         shell: pwsh
         run: |
-          $ver = (Get-Content frontend/package.json | ConvertFrom-Json).version
-          Write-Host "Application Version: $ver"
-          echo "APP_VERSION=$ver" >> $env:GITHUB_ENV
+          $zipFile = "release_windows\E-Commerce-Dashboard-Portable-v$env:APP_VERSION.zip"
+          Compress-Archive -Path "dist_windows\E-Commerce-Dashboard-Portable" -DestinationPath $zipFile -Force
+          Write-Host "✓ Готовый ZIP архив: $zipFile"
 
-      - name: Compile Installer with Inno Setup
-        run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion="${{ env.APP_VERSION }}" /DSourceDir="..\dist_windows" windows\installer.iss
-
-      - name: Upload Setup.exe as Artifact
+      - name: Upload Portable ZIP as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: E-Commerce-Dashboard-Setup-v${{ env.APP_VERSION }}
-          path: release_windows/E-Commerce-Dashboard-Setup-v*.exe
+          name: E-Commerce-Dashboard-Portable-v${{ env.APP_VERSION }}
+          path: release_windows/E-Commerce-Dashboard-Portable-v*.zip
           retention-days: 14
 
       - name: Publish to GitHub Releases (on Tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: release_windows/E-Commerce-Dashboard-Setup-v*.exe
+          files: release_windows/E-Commerce-Dashboard-Portable-v*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
