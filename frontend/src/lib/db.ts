@@ -18,6 +18,17 @@ function resolveDbPath(): string {
   if (process.env.DATABASE_PATH && fs.existsSync(/*turbopackIgnore: true*/ process.env.DATABASE_PATH)) {
     return process.env.DATABASE_PATH;
   }
+  const cwd = process.cwd();
+  const portableCandidates = [
+    path.resolve(cwd, 'data', 'dashboard.db'),
+    path.resolve(cwd, '../data', 'dashboard.db'),
+    path.resolve(cwd, '../../data', 'dashboard.db')
+  ];
+  for (const p of portableCandidates) {
+    if (fs.existsSync(/*turbopackIgnore: true*/ p)) {
+      return p;
+    }
+  }
   const appDataDir = getAppDataDir();
   if (appDataDir) {
     const appDb = path.join(appDataDir, 'dashboard.db');

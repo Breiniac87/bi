@@ -128,14 +128,37 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     PathRemoveFileSpecW(appDir);
     SetCurrentDirectoryW(appDir);
 
-    // Папка AppData
-    WCHAR appData[MAX_PATH] = {0};
-    if (GetEnvironmentVariableW(L"APPDATA", appData, MAX_PATH) == 0) {
-        wcscpy_s(appData, MAX_PATH, L"C:\\ProgramData");
-    }
+    // Определение каталога данных (приоритет: локальная папка data\ рядом с .exe для полной портативности)
     WCHAR appDataDir[MAX_PATH] = {0};
-    swprintf_s(appDataDir, MAX_PATH, L"%s\\ECommerceDashboard", appData);
-    CreateDirectoryW(appDataDir, NULL);
+    WCHAR portableDataDir[MAX_PATH] = {0};
+    swprintf_s(portableDataDir, MAX_PATH, L"%s\\data", appDir);
+
+    BOOL isPortable = FALSE;
+    if (PathFileExistsW(portableDataDir)) {
+        isPortable = TRUE;
+    } else {
+        if (CreateDirectoryW(portableDataDir, NULL)) {
+            isPortable = TRUE;
+        }
+    }
+
+    if (isPortable) {
+        wcscpy_s(appDataDir, MAX_PATH, portableDataDir);
+        // Создаем папки для отчетов по умолчанию
+        WCHAR adsDir[MAX_PATH], salesDir[MAX_PATH];
+        swprintf_s(adsDir, MAX_PATH, L"%s\\ads", appDataDir);
+        swprintf_s(salesDir, MAX_PATH, L"%s\\sales", appDataDir);
+        CreateDirectoryW(adsDir, NULL);
+        CreateDirectoryW(salesDir, NULL);
+    } else {
+        // Резервный вариант: %APPDATA%\ECommerceDashboard если каталог защищен от записи
+        WCHAR appData[MAX_PATH] = {0};
+        if (GetEnvironmentVariableW(L"APPDATA", appData, MAX_PATH) == 0) {
+            wcscpy_s(appData, MAX_PATH, L"C:\\ProgramData");
+        }
+        swprintf_s(appDataDir, MAX_PATH, L"%s\\ECommerceDashboard", appData);
+        CreateDirectoryW(appDataDir, NULL);
+    }
 
     // Подготовка шаблонов БД и конфига при первом запуске
     WCHAR userDb[MAX_PATH];
@@ -155,6 +178,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
         swprintf_s(templateCfg, MAX_PATH, L"%s\\template_config.json", appDir);
         if (PathFileExistsW(templateCfg)) {
             CopyFileW(templateCfg, userCfg, FALSE);
+        } else {
+            // Создаем базовый конфиг
+            HANDLE hFile = CreateFileW(userCfg, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (hFile != INVALID_HANDLE_VALUE) {
+                const char defaultConfig[] = "{\n  \"ads_dir\": \"\",\n  \"sales_dir\": \"\"\n}\n";
+                DWORD bytesWritten;
+                WriteFile(hFile, defaultConfig, (DWORD)strlen(defaultConfig), &bytesWritten, NULL);
+                CloseHandle(hFile);
+            }
         }
     }
 
@@ -282,9 +314,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     }
 
     if (!ready) {
+        WCHAR warnBuf[MAX_PATH * 2];
+        swprintf_s(
+            warnBuf,
+            MAX_PATH * 2,
+            L"Сервер приложения не успел ответить вовремя (таймаут 25 сек).\nПодробности записаны в файл логов:\n%s",
+            logFile
+        );
         MessageBoxW(
             NULL,
-            L"Сервер приложения не успел ответить вовремя (таймаут 25 сек).\nПодробности записаны в файл логов:\n%APPDATA%\\ECommerceDashboard\\server.log",
+            warnBuf,
             L"E-Commerce Dashboard - Предупреждение",
             MB_ICONWARNING | MB_OK
         );

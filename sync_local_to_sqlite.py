@@ -13,7 +13,20 @@ sqlite3.register_adapter(np.int32, int)
 sqlite3.register_adapter(np.float64, float)
 sqlite3.register_adapter(np.float32, float)
 
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    _exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    # В бандле исполняемый файл лежит в etl/sync_local_to_sqlite/
+    _candidate_root = os.path.abspath(os.path.join(_exe_dir, "..", ".."))
+    if os.path.exists(os.path.join(_candidate_root, "data")) or os.path.exists(os.path.join(_candidate_root, "app")):
+        PROJECT_ROOT = _candidate_root
+    else:
+        _parent = os.path.abspath(os.path.join(_exe_dir, ".."))
+        if os.path.exists(os.path.join(_parent, "data")):
+            PROJECT_ROOT = _parent
+        else:
+            PROJECT_ROOT = _exe_dir
+else:
+    PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 def get_app_support_dir():
     app_data = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
@@ -26,18 +39,32 @@ APP_SUPPORT_DIR = get_app_support_dir()
 def resolve_default_db():
     if os.environ.get("DATABASE_PATH"):
         return os.environ.get("DATABASE_PATH")
+    # Приоритет портативного режима: data/dashboard.db в корне приложения
+    portable_db = os.path.join(PROJECT_ROOT, "data", "dashboard.db")
+    if os.path.exists(portable_db):
+        return portable_db
+    root_db = os.path.join(PROJECT_ROOT, "dashboard.db")
+    if os.path.exists(root_db):
+        return root_db
     app_support_db = os.path.join(APP_SUPPORT_DIR, "dashboard.db")
     if os.path.exists(app_support_db):
         return app_support_db
-    return os.path.join(PROJECT_ROOT, "dashboard.db")
+    return portable_db if os.path.exists(os.path.join(PROJECT_ROOT, "data")) else root_db
 
 def resolve_default_config():
     if os.environ.get("CONFIG_PATH"):
         return os.environ.get("CONFIG_PATH")
+    # Приоритет портативного режима: data/config.json в корне приложения
+    portable_cfg = os.path.join(PROJECT_ROOT, "data", "config.json")
+    if os.path.exists(portable_cfg):
+        return portable_cfg
+    root_cfg = os.path.join(PROJECT_ROOT, "config.json")
+    if os.path.exists(root_cfg):
+        return root_cfg
     app_support_cfg = os.path.join(APP_SUPPORT_DIR, "config.json")
     if os.path.exists(app_support_cfg):
         return app_support_cfg
-    return os.path.join(PROJECT_ROOT, "config.json")
+    return portable_cfg if os.path.exists(os.path.join(PROJECT_ROOT, "data")) else root_cfg
 
 DEFAULT_DB_PATH = resolve_default_db()
 DEFAULT_ADS_DIR = os.path.join(PROJECT_ROOT, "data", "ads")
@@ -147,6 +174,7 @@ def init_db(db_path=DEFAULT_DB_PATH):
             event_date DATE,
             item_id TEXT,
             supplier_id TEXT,
+            seller_name TEXT DEFAULT '',
             orders_count INTEGER DEFAULT 0,
             orders_sum REAL DEFAULT 0,
             buyouts_sum REAL DEFAULT 0,
@@ -162,6 +190,9 @@ def init_db(db_path=DEFAULT_DB_PATH):
     sales_cols = [row[1] for row in cursor.fetchall()]
     if 'source_file' not in sales_cols:
         try: cursor.execute("ALTER TABLE sales ADD COLUMN source_file TEXT DEFAULT ''")
+        except Exception: pass
+    if 'seller_name' not in sales_cols:
+        try: cursor.execute("ALTER TABLE sales ADD COLUMN seller_name TEXT DEFAULT ''")
         except Exception: pass
 
     cursor.execute("PRAGMA journal_mode = WAL")
@@ -227,19 +258,69 @@ def backfill_missing_hashes(conn, ads_dir, sales_dir):
                 cursor.execute("UPDATE processed_files SET file_hash = ? WHERE filename = ?", (fhash, fname))
     conn.commit()
 
+def clean_id(val):
+    """Приводит идентификаторы (номенклатуры, селлера) к чистой строке без .0 и пустых значений."""
+    if pd.isna(val):
+        return ''
+    s = str(val).strip()
+    if s.endswith('.0'):
+        s = s[:-2]
+    if s.lower() in ('nan', 'none', 'null', ''):
+        return ''
+    return s
+
 def load_file_df(filepath):
     ext = os.path.splitext(filepath)[1].lower()
     if ext == '.csv':
-        df = pd.read_csv(filepath)
+        encodings = ['utf-8-sig', 'utf-8', 'cp1251']
+        sample = ''
+        used_enc = 'utf-8'
+        for enc in encodings:
+            try:
+                with open(filepath, 'r', encoding=enc) as f:
+                    sample = f.read(8192)
+                    used_enc = enc
+                    break
+            except Exception:
+                continue
+        delim = ';'
+        if sample:
+            first_line = sample.strip().split('\n')[0]
+            cnt_semi = first_line.count(';')
+            cnt_comma = first_line.count(',')
+            cnt_tab = first_line.count('\t')
+            if cnt_semi >= cnt_comma and cnt_semi > 0:
+                delim = ';'
+            elif cnt_comma >= cnt_tab and cnt_comma > 0:
+                delim = ','
+            elif cnt_tab > 0:
+                delim = '\t'
+        df = pd.read_csv(filepath, sep=delim, encoding=used_enc)
     else:
         df = pd.read_excel(filepath)
     df.columns = df.columns.astype(str).str.strip().str.lower()
     return df
 
-def get_num(df, col):
-    if col in df.columns:
-        return pd.to_numeric(df[col], errors='coerce').fillna(0)
-    return pd.Series(0, index=df.index)
+def get_num(df, cols):
+    """
+    Извлекает числовую колонку с очисткой русских пробелов, запятых в десятичной части,
+    значений NaN/+Inf/-Inf и поддержкой альтернативных названий колонок.
+    """
+    if isinstance(cols, str):
+        cols = [cols]
+    for col in cols:
+        col_clean = str(col).strip().lower()
+        if col_clean in df.columns:
+            s = (
+                df[col_clean]
+                .astype(str)
+                .str.replace('\xa0', '', regex=False)
+                .str.replace(' ', '', regex=False)
+                .str.replace(',', '.', regex=False)
+                .replace(['+inf', '-inf', 'inf', '+Inf', '-Inf', 'Inf', 'nan', 'NaN', 'None', 'none', ''], '0')
+            )
+            return pd.to_numeric(s, errors='coerce').fillna(0.0)
+    return pd.Series(0.0, index=df.index)
 
 def find_candidate_files(folder_path):
     if not os.path.exists(folder_path):
@@ -260,6 +341,12 @@ def validate_and_parse_date_column(df, category, filename):
     Для продаж поле обычно называется 'Период', для рекламы - 'event_date'/'Дата'.
     Если колонка отсутствует или содержит недопустимые значения (например, числа 6, 7, 8, 9,
     не-даты или даты вне диапазона 2000-2050), выбрасывает понятное пользователю исключение ValueError.
+    Поддерживает:
+    - Числовые даты Excel
+    - Даты с временем вида '7/15/26 3:00', '2026-09-01 03:00:00'
+    - Российский формат 'DD.MM.YYYY'
+    - Американский формат 'M/D/YY' и 'M/D/YYYY'
+    - ISO формат 'YYYY-MM-DD'
     """
     candidates = ['период', 'дата', 'date', 'event_date'] if category == 'sales' else ['event_date', 'дата', 'date', 'период']
     date_col = None
@@ -307,7 +394,20 @@ def validate_and_parse_date_column(df, category, filename):
     if pd.api.types.is_numeric_dtype(non_null):
         parsed = pd.to_datetime(series, unit='D', origin='1899-12-30', errors='coerce')
     else:
-        parsed = pd.to_datetime(series, format='mixed', errors='coerce')
+        # Очищаем строковую часть времени (например ' 3:00' или ' 00:00:00')
+        cleaned = series.astype(str).str.strip().str.split().str[0]
+        non_empty = cleaned[cleaned != ''].dropna().head(50)
+        has_dot = non_empty.str.contains(r'\.').any()
+        has_slash = non_empty.str.contains(r'/').any()
+
+        if has_dot and not has_slash:
+            # Российский/европейский формат DD.MM.YYYY
+            parsed = pd.to_datetime(cleaned, dayfirst=True, format='mixed', errors='coerce')
+        elif has_slash:
+            # Американский формат M/D/YY или M/D/YYYY
+            parsed = pd.to_datetime(cleaned, dayfirst=False, format='mixed', errors='coerce')
+        else:
+            parsed = pd.to_datetime(cleaned, format='mixed', errors='coerce')
 
     # Проверка на NaT или нереалистичные года (< 2000 или > 2050)
     invalid_mask = non_null.index[
@@ -339,30 +439,50 @@ def process_ads_file(filepath, filename, conn, file_hash=None, mtime=None, size=
 
     event_date_series = validate_and_parse_date_column(df, 'ads', filename)
     
-    item_col = 'nm' if 'nm' in df.columns else ('id_товара' if 'id_товара' in df.columns else 'item_id')
-    supp_col = 'supplier_id' if 'supplier_id' in df.columns else ('id_продавца' if 'id_продавца' in df.columns else None)
+    item_col = None
+    for cand in ['nm', 'id_товара', 'item_id', 'nm_id']:
+        if cand in df.columns:
+            item_col = cand
+            break
 
-    raw_name = df['name'] if 'name' in df.columns else (df['seller_name'] if 'seller_name' in df.columns else pd.Series('', index=df.index))
-    seller_name_cleaned = raw_name.astype(str).str.strip().str.lower().replace({'nan': '', 'none': '', 'null': ''})
+    supp_col = None
+    for cand in ['supplier_id', 'id_продавца', 'id_селлера']:
+        if cand in df.columns:
+            supp_col = cand
+            break
+
+    # Имя бренда / селлера в lowercase:
+    # Приоритет: 'name' -> 'seller_name' -> 'название селлера'
+    raw_name = pd.Series('', index=df.index)
+    for name_cand in ['name', 'seller_name', 'название селлера']:
+        if name_cand in df.columns:
+            raw_name = raw_name.replace('', np.nan).fillna(df[name_cand])
+
+    seller_name_cleaned = (
+        raw_name.astype(str)
+        .str.strip()
+        .str.lower()
+        .replace({'nan': '', 'none': '', 'null': ''})
+    )
 
     ads_processed = pd.DataFrame({
         'source_file': filename,
         'event_date': event_date_series,
-        'item_id': df[item_col].astype(str) if item_col in df.columns else '',
-        'supplier_id': df[supp_col].astype(str) if supp_col and supp_col in df.columns else '',
+        'item_id': df[item_col].apply(clean_id) if item_col else '',
+        'supplier_id': df[supp_col].apply(clean_id) if supp_col else '',
         'rk_type': df['тип рк'].astype(str) if 'тип рк' in df.columns else '',
         'cpc_flag': df['флаг cpc'].astype(str) if 'флаг cpc' in df.columns else '',
         'seller_name': seller_name_cleaned,
-        'orders_count_direct': get_num(df, 'кол-во заказов (прямая)'),
-        'orders_count_assoc': get_num(df, 'кол-во заказов (атрибуция, ассоциированная)'),
-        'gmv_direct': get_num(df, 'gmv заказов (прямая)'),
-        'gmv_assoc': get_num(df, 'gmv заказов (атрибуция, ассоциированная)'),
-        'carts_direct': get_num(df, 'кол-во заказов в корзине (прямая)'),
-        'carts_assoc': get_num(df, 'кол-во заказов в корзине (атрибуция, ассоциированная)'),
-        'expenses': get_num(df, 'затраты на рекламу (общие)'),
-        'impressions': get_num(df, 'показы'),
-        'clicks': get_num(df, 'клики'),
-        'median_position': get_num(df, 'медианная позиция')
+        'orders_count_direct': get_num(df, ['кол-во заказов (прямая)', 'кол-во товаров (прямая)']),
+        'orders_count_assoc': get_num(df, ['кол-во заказов (атрибуция, ассоциированная)', 'кол-во товаров (атрибуция, ассоциированная)']),
+        'gmv_direct': get_num(df, ['gmv заказов (прямая)', 'gmv товаров (прямая)']),
+        'gmv_assoc': get_num(df, ['gmv заказов (атрибуция, ассоциированная)', 'gmv товаров (атрибуция, ассоциированная)']),
+        'carts_direct': get_num(df, ['кол-во заказов в корзине (прямая)', 'кол-во товаров в корзине (прямая)']),
+        'carts_assoc': get_num(df, ['кол-во заказов в корзине (атрибуция, ассоциированная)', 'кол-во товаров в корзине (атрибуция, ассоциированная)']),
+        'expenses': get_num(df, ['затраты на рекламу (общие)', 'затраты', 'расходы']),
+        'impressions': get_num(df, ['показы']),
+        'clicks': get_num(df, ['клики']),
+        'median_position': get_num(df, ['медианная позиция'])
     })
 
     cursor = conn.cursor()
@@ -392,22 +512,45 @@ def process_sales_file(filepath, filename, conn, file_hash=None, mtime=None, siz
 
     event_date_series = validate_and_parse_date_column(df, 'sales', filename)
 
-    item_col = 'nm_id' if 'nm_id' in df.columns else ('id_товара' if 'id_товара' in df.columns else 'item_id')
-    supp_col = 'supplier_id' if 'supplier_id' in df.columns else ('id_продавца' if 'id_продавца' in df.columns else None)
+    item_col = None
+    for cand in ['nm__id', 'nm_id', 'id_товара', 'item_id', 'nm']:
+        if cand in df.columns:
+            item_col = cand
+            break
+
+    supp_col = None
+    for cand in ['supplier__id', 'supplier_id', 'id_продавца', 'id_селлера']:
+        if cand in df.columns:
+            supp_col = cand
+            break
+
+    # Имя бренда / селлера в продажах (если есть brand__name или supplier__name):
+    raw_brand = pd.Series('', index=df.index)
+    for b_cand in ['brand__name', 'brand_name', 'brand', 'name', 'seller_name', 'supplier__name', 'supplier_name', 'название селлера']:
+        if b_cand in df.columns:
+            raw_brand = raw_brand.replace('', np.nan).fillna(df[b_cand])
+
+    seller_name_cleaned = (
+        raw_brand.astype(str)
+        .str.strip()
+        .str.lower()
+        .replace({'nan': '', 'none': '', 'null': ''})
+    )
 
     sales_processed = pd.DataFrame({
         'source_file': filename,
         'event_date': event_date_series,
-        'item_id': df[item_col].astype(str) if item_col in df.columns else '',
-        'supplier_id': df[supp_col].astype(str) if supp_col and supp_col in df.columns else '',
-        'orders_count': get_num(df, 'заказы, шт'),
-        'orders_sum': get_num(df, 'заказы, руб'),
-        'buyouts_sum': get_num(df, 'продажи по оплатам, руб'),
-        'price_before_spp': get_num(df, 'заказы, цена до спп'),
-        'price_after_spp': get_num(df, 'заказы, цена после спп (aiv)'),
-        'spp_percent': get_num(df, 'заказы, процент спп'),
-        'cancels_count': get_num(df, 'отмены, шт'),
-        'returns_count': get_num(df, 'возвраты, шт')
+        'item_id': df[item_col].apply(clean_id) if item_col else '',
+        'supplier_id': df[supp_col].apply(clean_id) if supp_col else '',
+        'seller_name': seller_name_cleaned,
+        'orders_count': get_num(df, ['заказы, шт', 'заказы шт', 'заказы']),
+        'orders_sum': get_num(df, ['заказы, руб', 'заказы руб', 'сумма заказов']),
+        'buyouts_sum': get_num(df, ['продажи по оплатам, руб', 'выкупы, руб', 'сумма выкупов']),
+        'price_before_spp': get_num(df, ['заказы, цена до спп', 'цена до спп']),
+        'price_after_spp': get_num(df, ['заказы, цена после спп (aiv)', 'цена после спп (aiv)', 'цена после спп']),
+        'spp_percent': get_num(df, ['заказы, процент спп', 'процент спп', 'спп %']),
+        'cancels_count': get_num(df, ['отмены, шт', 'отмены шт', 'отмены']),
+        'returns_count': get_num(df, ['возвраты, шт', 'возвраты шт', 'возвраты'])
     })
 
     cursor = conn.cursor()
@@ -443,19 +586,32 @@ def rebuild_merged_data(conn):
         conn.commit()
         return 0
 
-    # Нормализация seller_name в ads
+    # Нормализация seller_name в ads и sales
     if not df_ads.empty and 'seller_name' in df_ads.columns:
         df_ads['seller_name'] = df_ads['seller_name'].astype(str).str.strip().str.lower()
         df_ads['seller_name'] = df_ads['seller_name'].replace({'nan': np.nan, 'none': np.nan, 'null': np.nan, '': np.nan})
 
-    # Построение справочников имен брендов из рекламы
+    if not df_sales.empty and 'seller_name' in df_sales.columns:
+        df_sales['seller_name'] = df_sales['seller_name'].astype(str).str.strip().str.lower()
+        df_sales['seller_name'] = df_sales['seller_name'].replace({'nan': np.nan, 'none': np.nan, 'null': np.nan, '': np.nan})
+
+    # Построение справочников имен брендов из рекламы И продаж
     mapping_item = {}
     mapping_supp = {}
+
+    # Сначала из продаж
+    if not df_sales.empty and 'seller_name' in df_sales.columns:
+        valid_sales = df_sales[df_sales['seller_name'].notna() & (df_sales['seller_name'] != '')]
+        if not valid_sales.empty:
+            mapping_item.update(valid_sales.drop_duplicates(subset=['item_id']).set_index('item_id')['seller_name'].to_dict())
+            mapping_supp.update(valid_sales.drop_duplicates(subset=['supplier_id']).set_index('supplier_id')['seller_name'].to_dict())
+
+    # Реклама имеет приоритет при совпадении
     if not df_ads.empty and 'seller_name' in df_ads.columns:
         valid_ads = df_ads[df_ads['seller_name'].notna() & (df_ads['seller_name'] != '')]
         if not valid_ads.empty:
-            mapping_item = valid_ads.drop_duplicates(subset=['item_id']).set_index('item_id')['seller_name'].to_dict()
-            mapping_supp = valid_ads.drop_duplicates(subset=['supplier_id']).set_index('supplier_id')['seller_name'].to_dict()
+            mapping_item.update(valid_ads.drop_duplicates(subset=['item_id']).set_index('item_id')['seller_name'].to_dict())
+            mapping_supp.update(valid_ads.drop_duplicates(subset=['supplier_id']).set_index('supplier_id')['seller_name'].to_dict())
 
     if not df_ads.empty:
         df_ads.rename(columns={
@@ -466,8 +622,8 @@ def rebuild_merged_data(conn):
             'cpc_flag': 'Флаг CPC',
             'seller_name': 'name'
         }, inplace=True)
-        df_ads['id_товара'] = df_ads['id_товара'].astype(str)
-        df_ads['id_продавца'] = df_ads['id_продавца'].astype(str)
+        df_ads['id_товара'] = df_ads['id_товара'].apply(clean_id)
+        df_ads['id_продавца'] = df_ads['id_продавца'].apply(clean_id)
         df_ads['Заказов шт. (по РК)'] = pd.to_numeric(df_ads['orders_count_direct'], errors='coerce').fillna(0) + pd.to_numeric(df_ads['orders_count_assoc'], errors='coerce').fillna(0)
         df_ads['Сумма заказов (по РК)'] = pd.to_numeric(df_ads['gmv_direct'], errors='coerce').fillna(0) + pd.to_numeric(df_ads['gmv_assoc'], errors='coerce').fillna(0)
         df_ads['Корзины (всего)'] = pd.to_numeric(df_ads['carts_direct'], errors='coerce').fillna(0) + pd.to_numeric(df_ads['carts_assoc'], errors='coerce').fillna(0)
@@ -483,8 +639,8 @@ def rebuild_merged_data(conn):
             'item_id': 'id_товара',
             'supplier_id': 'id_продавца'
         }, inplace=True)
-        df_sales['id_товара'] = df_sales['id_товара'].astype(str)
-        df_sales['id_продавца'] = df_sales['id_продавца'].astype(str)
+        df_sales['id_товара'] = df_sales['id_товара'].apply(clean_id)
+        df_sales['id_продавца'] = df_sales['id_продавца'].apply(clean_id)
         sales_agg_dict = {
             'orders_count': 'sum', 'orders_sum': 'sum', 'buyouts_sum': 'sum', 
             'price_before_spp': 'mean', 'price_after_spp': 'mean', 'spp_percent': 'mean',

@@ -87,25 +87,29 @@ YANDEX_DISK_TOKEN="y0_AgAAAA..."
 
 ---
 
-## 🪟 Сборка автономной версии для Windows 10 / 11
+## 🪟 Сборка портативной версии (Portable) для Windows 10 / 11
 
-Проект полностью кросс-платформенный и поддерживает сборку автономного установщика **`E-Commerce-Dashboard-Setup.exe`** (Inno Setup) с поддержкой запуска в нативном окне (Microsoft Edge App Mode).
+Проект собирается в виде автономной **портативной папки без установки** (`E-Commerce-Dashboard-Portable`), внутри которой находится исполняемый файл `E-Commerce Dashboard.exe`.
+- Работает без установки Node.js или Python на целевой машине.
+- Не требует прав администратора.
+- Все данные (база SQLite, настройки и отчеты) сохраняются локально в подпапке `data/`, поэтому папку можно свободно переносить на флешку или другой компьютер.
 
 ### Вариант 1. Автоматическая облачная сборка через GitHub Actions (Рекомендуется)
-Если вы работаете на macOS и у вас нет под рукой Windows-компьютера:
+Если вы работаете на macOS и хотите сразу получить готовый ZIP-архив:
 1. Отправьте изменения в репозиторий GitHub (`git push`).
-2. В GitHub перейдите во вкладку **Actions** $\rightarrow$ выберите workflow **"Build Windows Release"** $\rightarrow$ нажмите **"Run workflow"**.
-3. Облачный раннер Windows автоматически соберет Python ETL, Next.js и скомпилирует инсталлятор.
-4. Готовый файл **`E-Commerce-Dashboard-Setup.exe`** появится во вкладке **Artifacts** (или в Releases при создании тега `v*`).
+2. В GitHub перейдите во вкладку **Actions** $\rightarrow$ выберите workflow **"Build Windows Portable Release"** $\rightarrow$ нажмите **"Run workflow"**.
+3. Облачный раннер Windows соберет проект, создаст портативную папку и упакует её в ZIP-архив.
+4. Готовый архив **`E-Commerce-Dashboard-Portable-v1.0.2.zip`** появится во вкладке **Artifacts** (или в Releases при создании тега `v*`).
+5. Распакуйте архив и запустите `E-Commerce Dashboard.exe` — интерфейс сразу откроется в окне программы!
 
 ### Вариант 2. Локальная сборка на компьютере с Windows
 1. Склонируйте репозиторий на Windows 10/11.
-2. Убедитесь, что установлены **Python 3.10+**, **Node.js 18+** и **Inno Setup 6**.
-3. Запустите командный файл:
+2. Убедитесь, что установлены **Python 3.10+** и **Node.js 18+**.
+3. Запустите скрипт сборки:
    ```cmd
-   windows\build_installer.bat
+   windows\build_portable.bat
    ```
-4. Готовый инсталлятор будет сформирован в папке `release_windows\E-Commerce-Dashboard-Setup.exe`.
+4. Готовая портативная папка появится в `dist_windows\E-Commerce-Dashboard-Portable\`, а готовый к отправке архив — в `release_windows\E-Commerce-Dashboard-Portable-v1.0.2.zip`.
 
 ---
 *Проект оптимизирован, избавлен от мусорных библиотек и полностью готов к масштабированию.*

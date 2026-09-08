@@ -4,27 +4,37 @@ import path from 'path';
 import fs from 'fs';
 
 function getProjectRoot(): string {
-  const cwd = process.cwd();
-  if (fs.existsSync(path.join(cwd, 'config.json')) || fs.existsSync(path.join(cwd, 'sync_local_to_sqlite.py'))) {
-    return cwd;
+  let curr = process.cwd();
+  for (let i = 0; i < 6; i++) {
+    if (
+      fs.existsSync(path.join(curr, 'sync_local_to_sqlite.py')) ||
+      fs.existsSync(path.join(curr, 'data')) ||
+      fs.existsSync(path.join(curr, 'node.exe'))
+    ) {
+      return curr;
+    }
+    const parent = path.resolve(curr, '..');
+    if (parent === curr) break;
+    curr = parent;
   }
-  const parent = path.resolve(cwd, '..');
-  if (fs.existsSync(path.join(parent, 'config.json')) || fs.existsSync(path.join(parent, 'sync_local_to_sqlite.py'))) {
-    return parent;
-  }
-  return cwd;
+  return process.cwd();
 }
 
 function getConfigPath(): string {
   if (process.env.CONFIG_PATH && fs.existsSync(/*turbopackIgnore: true*/ process.env.CONFIG_PATH)) {
     return process.env.CONFIG_PATH;
   }
+  const projectRoot = getProjectRoot();
+  const portableCfg = path.join(projectRoot, 'data', 'config.json');
+  if (fs.existsSync(/*turbopackIgnore: true*/ portableCfg)) {
+    return portableCfg;
+  }
   const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
   if (appData) {
     const winCfg = path.join(appData, 'ECommerceDashboard', 'config.json');
     if (fs.existsSync(/*turbopackIgnore: true*/ winCfg)) return winCfg;
   }
-  return path.join(getProjectRoot(), 'config.json');
+  return path.join(projectRoot, 'config.json');
 }
 
 export async function GET() {
