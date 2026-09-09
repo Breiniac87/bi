@@ -24,7 +24,7 @@
 4. Нажмите кнопку "Run workflow" -> выберите ветку "main" -> нажмите "Run workflow".
 5. Через 3–5 минут перейдите в завершившийся запуск и в разделе "Artifacts"
    скачайте готовый архив:
-   "E-Commerce-Dashboard-Portable-v1.0.3.zip".
+   "E-Commerce-Dashboard-Portable-v1.0.4.zip".
 6. Распакуйте архив в любое место и кликните "E-Commerce Dashboard.exe"!
 
 
@@ -45,6 +45,6 @@
    - Соберет Next.js standalone сервер;
    - Скомпилирует нативный GUI-лаунчер "E-Commerce Dashboard.exe" с иконкой;
    - Упакует рантайм node.exe и сформирует готовую папку dist_windows\E-Commerce-Dashboard-Portable;
-   - Создаст готовый архив release_windows\E-Commerce-Dashboard-Portable-v1.0.3.zip.
+   - Создаст готовый архив release_windows\E-Commerce-Dashboard-Portable-v1.0.4.zip.
 4. Готово! Папка и zip-архив готовы к использованию и распространению.
 ================================================================================

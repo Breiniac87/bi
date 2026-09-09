@@ -30,11 +30,12 @@ if errorlevel 1 (
 )
 
 :: Определение версии программы
-set "APP_VERSION=1.0.3"
+set "APP_VERSION=1.0.4"
 for /f "tokens=2 delims=:, " %%a in ('findstr /r "\"version\":" "%PROJECT_ROOT%\frontend\package.json"') do (
     set "RAW_VER=%%~a"
     set "APP_VERSION=!RAW_VER:"=!"
 )
+
 echo Версия приложения: %APP_VERSION%
 
 :: 2. Очистка и создание структуры папок
@@ -141,9 +142,8 @@ copy /y "%DIR%\app_icon.ico" "%STAGE_DIR%\app_icon.ico" >nul
 
 :: 8. Упаковка в ZIP-архив
 echo --- [6/6] Создание ZIP-архива для удобной передачи ---
-set "ZIP_PATH=%RELEASE_DIR%\E-Commerce-Dashboard-Portable-v%APP_VERSION%.zip"
-if exist "%ZIP_PATH%" del /f /q "%ZIP_PATH%"
-powershell -NoProfile -Command "Compress-Archive -Path '%STAGE_DIR%' -DestinationPath '%ZIP_PATH%' -Force"
+python "%PROJECT_ROOT%\scripts\make_portable_zip.py" "%STAGE_DIR%" "%ZIP_PATH%"
+
 
 echo ==========================================================
 echo   СБОРКА ПОРТАТИВНОЙ ВЕРСИИ УСПЕШНО ЗАВЕРШЕНА!

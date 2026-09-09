@@ -123,7 +123,7 @@ YANDEX_DISK_TOKEN="y0_AgAAAA..."
 1. Отправьте изменения в репозиторий GitHub (`git push`).
 2. В GitHub перейдите во вкладку **Actions** $\rightarrow$ выберите workflow **"Build Windows Portable Release"** $\rightarrow$ нажмите **"Run workflow"**.
 3. Облачный раннер Windows соберет проект, создаст портативную папку и упакует её в ZIP-архив.
-4. Готовый архив **`E-Commerce-Dashboard-Portable-v1.0.3.zip`** появится во вкладке **Artifacts** (или в Releases при создании тега `v*`).
+4. Готовый архив **`E-Commerce-Dashboard-Portable-v1.0.4.zip`** появится во вкладке **Artifacts** (или в Releases при создании тега `v*`).
 5. Распакуйте архив и запустите `E-Commerce Dashboard.exe` — интерфейс сразу откроется в окне программы!
 
 ### Вариант 2. Локальная сборка на компьютере с Windows
@@ -133,7 +133,7 @@ YANDEX_DISK_TOKEN="y0_AgAAAA..."
    ```cmd
    windows\build_portable.bat
    ```
-4. Готовая портативная папка появится в `dist_windows\E-Commerce-Dashboard-Portable\`, а готовый к отправке архив — в `release_windows\E-Commerce-Dashboard-Portable-v1.0.3.zip`.
+4. Готовая портативная папка появится в `dist_windows\E-Commerce-Dashboard-Portable\`, а готовый к отправке архив — в `release_windows\E-Commerce-Dashboard-Portable-v1.0.4.zip`.
 
 ---
 *Проект оптимизирован, избавлен от мусорных библиотек и полностью готов к масштабированию.*

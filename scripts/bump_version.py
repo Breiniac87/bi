@@ -102,7 +102,7 @@ def update_portable_bat(new_ver: str) -> None:
         return
     with open(PORTABLE_BAT_PATH, "r", encoding="utf-8") as f:
         content = f.read()
-    updated = re.sub(r'set\s+"APP_VERSION=[^"]+"', f'set "APP_VERSION={new_ver}"', content)
+    updated = re.sub(r'set\s+"APP_VERSION=[0-9.]+"', f'set "APP_VERSION={new_ver}"', content)
     with open(PORTABLE_BAT_PATH, "w", encoding="utf-8") as f:
         f.write(updated)
     print(f"✓ Обновлен {PORTABLE_BAT_PATH.relative_to(ROOT_DIR)} -> {new_ver}")
