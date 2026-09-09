@@ -100,7 +100,7 @@ jobs:
         shell: pwsh
         run: |
           $zipFile = "release_windows\E-Commerce-Dashboard-Portable-v$env:APP_VERSION.zip"
-          Compress-Archive -Path "dist_windows\E-Commerce-Dashboard-Portable" -DestinationPath $zipFile -Force
+          python scripts/make_portable_zip.py "dist_windows\E-Commerce-Dashboard-Portable" "$zipFile"
           Write-Host "✓ Готовый ZIP архив: $zipFile"
 
       - name: Upload Portable ZIP as Artifact

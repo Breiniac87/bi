@@ -101,6 +101,16 @@ if exist "%DIR%\app\server.js" (
     cd /d "%DIR%\app"
     start "E-Commerce-Server" /MIN "%NODE_BIN%" server.js >> "%APP_DATA_DIR%\server.log" 2>&1
 ) else if exist "%PROJECT_ROOT%\frontend\.next\standalone\server.js" (
+    if not exist "%PROJECT_ROOT%\frontend\.next\standalone\.next\static" (
+        if exist "%PROJECT_ROOT%\frontend\.next\static" (
+            xcopy /e /i /y "%PROJECT_ROOT%\frontend\.next\static" "%PROJECT_ROOT%\frontend\.next\standalone\.next\static" >nul 2>&1
+        )
+    )
+    if not exist "%PROJECT_ROOT%\frontend\.next\standalone\public" (
+        if exist "%PROJECT_ROOT%\frontend\public" (
+            xcopy /e /i /y "%PROJECT_ROOT%\frontend\public" "%PROJECT_ROOT%\frontend\.next\standalone\public" >nul 2>&1
+        )
+    )
     cd /d "%PROJECT_ROOT%\frontend\.next\standalone"
     start "E-Commerce-Server" /MIN "%NODE_BIN%" server.js >> "%APP_DATA_DIR%\server.log" 2>&1
 ) else (

@@ -102,6 +102,13 @@ else
         "$NODE_BIN" server.js >> "$LOG_FILE" 2>&1 &
         SERVER_PID=$!
     elif [ -f "$PROJECT_ROOT/frontend/.next/standalone/server.js" ]; then
+        if [ ! -d "$PROJECT_ROOT/frontend/.next/standalone/.next/static" ] && [ -d "$PROJECT_ROOT/frontend/.next/static" ]; then
+            mkdir -p "$PROJECT_ROOT/frontend/.next/standalone/.next"
+            cp -R "$PROJECT_ROOT/frontend/.next/static" "$PROJECT_ROOT/frontend/.next/standalone/.next/static"
+        fi
+        if [ ! -d "$PROJECT_ROOT/frontend/.next/standalone/public" ] && [ -d "$PROJECT_ROOT/frontend/public" ]; then
+            cp -R "$PROJECT_ROOT/frontend/public" "$PROJECT_ROOT/frontend/.next/standalone/public"
+        fi
         cd "$PROJECT_ROOT/frontend/.next/standalone"
         "$NODE_BIN" server.js >> "$LOG_FILE" 2>&1 &
         SERVER_PID=$!

@@ -1,10 +1,11 @@
 {
   "name": "frontend",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node ../scripts/copy_standalone_assets.js",
     "start": "next start",
     "lint": "eslint"
   },

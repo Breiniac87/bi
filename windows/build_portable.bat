@@ -30,7 +30,7 @@ if errorlevel 1 (
 )
 
 :: Определение версии программы
-set "APP_VERSION=1.0.4"
+set "APP_VERSION=1.0.5"
 for /f "tokens=2 delims=:, " %%a in ('findstr /r "\"version\":" "%PROJECT_ROOT%\frontend\package.json"') do (
     set "RAW_VER=%%~a"
     set "APP_VERSION=!RAW_VER:"=!"
@@ -142,7 +142,8 @@ copy /y "%DIR%\app_icon.ico" "%STAGE_DIR%\app_icon.ico" >nul
 
 :: 8. Упаковка в ZIP-архив
 echo --- [6/6] Создание ZIP-архива для удобной передачи ---
-python "%PROJECT_ROOT%\scripts\make_portable_zip.py" "%STAGE_DIR%" "%ZIP_PATH%"
+set "ZIP_PATH=%RELEASE_DIR%\E-Commerce-Dashboard-Portable-v!APP_VERSION!.zip"
+python "%PROJECT_ROOT%\scripts\make_portable_zip.py" "%STAGE_DIR%" "!ZIP_PATH!"
 
 
 echo ==========================================================

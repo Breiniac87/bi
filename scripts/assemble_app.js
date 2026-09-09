@@ -37,13 +37,13 @@ if (!fs.existsSync(path.join(standaloneDir, 'server.js')) && fs.existsSync(path.
   const targetNodeModules = path.join(appTarget, 'node_modules');
   if (fs.existsSync(outerNodeModules)) {
     console.log('[Assemble] Copying shared node_modules from outer standalone directory...');
-    fs.cpSync(outerNodeModules, targetNodeModules, { recursive: true });
+    fs.cpSync(outerNodeModules, targetNodeModules, { recursive: true, dereference: true });
   }
 }
 
 // 2. Copy full standalone bundle (including hidden .next directory and server.js)
 console.log(`[Assemble] Copying standalone runtime from: ${sourceStandaloneDir}`);
-fs.cpSync(sourceStandaloneDir, appTarget, { recursive: true });
+fs.cpSync(sourceStandaloneDir, appTarget, { recursive: true, dereference: true });
 
 // 3. Copy static files into:
 //    a) .next/static (standard Next.js standalone location)
@@ -61,24 +61,41 @@ if (fs.existsSync(path.join(appTarget, 'frontend'))) {
 for (const loc of locationsToPopulate) {
   console.log(`[Assemble] Packaging static assets into: ${loc}`);
   fs.mkdirSync(loc, { recursive: true });
-  fs.cpSync(staticDir, loc, { recursive: true });
+  fs.cpSync(staticDir, loc, { recursive: true, dereference: true });
 }
 
 // 4. Copy public directory if exists
 if (fs.existsSync(publicDir)) {
-  const targetPublic = path.join(appTarget, 'public');
-  console.log(`[Assemble] Packaging Public assets into: ${targetPublic}`);
-  fs.mkdirSync(targetPublic, { recursive: true });
-  fs.cpSync(publicDir, targetPublic, { recursive: true });
+  const targetPublicLocations = [
+    path.join(appTarget, 'public')
+  ];
+  if (fs.existsSync(path.join(appTarget, 'frontend'))) {
+    targetPublicLocations.push(path.join(appTarget, 'frontend', 'public'));
+  }
+  for (const targetPublic of targetPublicLocations) {
+    console.log(`[Assemble] Packaging Public assets into: ${targetPublic}`);
+    fs.mkdirSync(targetPublic, { recursive: true });
+    fs.cpSync(publicDir, targetPublic, { recursive: true, dereference: true });
+  }
 }
 
 // 5. On Windows, explicitly remove Hidden / System attributes from all assembled files
+// This ensures archivers like Compress-Archive and Windows Explorer never skip .next or static files
 if (process.platform === 'win32') {
   try {
-    console.log('[Assemble] Removing hidden file attributes on Windows...');
-    execSync(`attrib -h -s "${appTarget}\\*" /s /d`, { stdio: 'ignore' });
+    console.log('[Assemble] Stripping hidden/system file attributes across entire bundle...');
+    execSync(`powershell -NoProfile -Command "Get-ChildItem -Path '${path.resolve(appTarget)}' -Recurse -Force | ForEach-Object { $_.Attributes = 'Normal' }"`, { stdio: 'ignore' });
+    execSync(`powershell -NoProfile -Command "(Get-Item -Path '${path.resolve(appTarget)}' -Force).Attributes = 'Normal'"`, { stdio: 'ignore' });
+    const dotNext = path.join(appTarget, '.next');
+    if (fs.existsSync(dotNext)) {
+      execSync(`powershell -NoProfile -Command "(Get-Item -Path '${path.resolve(dotNext)}' -Force).Attributes = 'Normal'"`, { stdio: 'ignore' });
+    }
   } catch (e) {
-    // Ignore error if attrib is unavailable
+    try {
+      execSync(`attrib -h -s "${appTarget}\\*" /s /d`, { stdio: 'ignore' });
+      execSync(`attrib -h -s "${appTarget}\\.next" /s /d`, { stdio: 'ignore' });
+      execSync(`attrib -h -s "${appTarget}\\.next\\*" /s /d`, { stdio: 'ignore' });
+    } catch (_) {}
   }
 }
 
@@ -90,12 +107,10 @@ const serverFilesToPatch = [
   path.join(appTarget, 'frontend', 'server.js')
 ];
 
-for (const serverJsPath of serverFilesToPatch) {
-  if (fs.existsSync(serverJsPath)) {
-    console.log(`[Assemble] Injecting static asset server hook into ${path.basename(serverJsPath)}...`);
-    const originalServerCode = fs.readFileSync(serverJsPath, 'utf8');
+const hookMarker = '// STATIC_ASSET_SERVING_HOOK_INJECTED';
 
-    const hookCode = `
+const hookCode = `
+${hookMarker}
 // ============================================================================
 // HIGH-RELIABILITY STATIC ASSET SERVING HOOK (E-COMMERCE DASHBOARD PORTABLE)
 // Guarantees CSS, JS chunks, and media are served immediately with correct MIME types
@@ -123,6 +138,29 @@ for (const serverJsPath of serverFilesToPatch) {
     '.otf': 'font/otf'
   };
 
+  function serveFile(filePath, req, res) {
+    try {
+      const ext = _path.extname(filePath).toLowerCase();
+      const stat = _fs.statSync(filePath);
+      res.setHeader('Content-Type', _mimeTypes[ext] || 'application/octet-stream');
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      if (req.method === 'HEAD') {
+        return res.end();
+      }
+      const stream = _fs.createReadStream(filePath);
+      stream.on('error', function(err) {
+        if (!res.headersSent) {
+          res.statusCode = 500;
+        }
+        res.end();
+      });
+      return stream.pipe(res);
+    } catch (e) {
+      // Fall through if file read fails
+    }
+  }
+
   const _origCreateServer = _http.createServer;
   _http.createServer = function(...args) {
     const origListener = typeof args[0] === 'function' ? args[0] : args[1];
@@ -132,6 +170,7 @@ for (const serverJsPath of serverFilesToPatch) {
         const parsedUrl = new URL(reqUrl, 'http://127.0.0.1:3000');
         let pathname = decodeURIComponent(parsedUrl.pathname);
 
+        // A. Handle /_next/static/*
         if (pathname.startsWith('/_next/static/')) {
           const subPath = pathname.substring('/_next/static/'.length);
           const candidatePaths = [
@@ -143,10 +182,23 @@ for (const serverJsPath of serverFilesToPatch) {
 
           for (const filePath of candidatePaths) {
             if (_fs.existsSync(filePath) && _fs.statSync(filePath).isFile()) {
-              const ext = _path.extname(filePath).toLowerCase();
-              res.setHeader('Content-Type', _mimeTypes[ext] || 'application/octet-stream');
-              res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-              return _fs.createReadStream(filePath).pipe(res);
+              return serveFile(filePath, req, res);
+            }
+          }
+        }
+
+        // B. Handle root public assets (/favicon.ico, /icon.png, /public/*)
+        if (pathname === '/favicon.ico' || pathname === '/icon.png' || pathname.startsWith('/public/')) {
+          const relPath = pathname.startsWith('/public/') ? pathname.substring('/public/'.length) : pathname.substring(1);
+          const candidatePaths = [
+            _path.join(__dirname, 'public', relPath),
+            _path.join(__dirname, relPath),
+            _path.join(__dirname, 'frontend', 'public', relPath)
+          ];
+
+          for (const filePath of candidatePaths) {
+            if (_fs.existsSync(filePath) && _fs.statSync(filePath).isFile()) {
+              return serveFile(filePath, req, res);
             }
           }
         }
@@ -170,8 +222,14 @@ for (const serverJsPath of serverFilesToPatch) {
 // ============================================================================
 `;
 
-    fs.writeFileSync(serverJsPath, hookCode + '\n' + originalServerCode, 'utf8');
-    console.log(`[Assemble] ✓ Static asset hook successfully injected into ${path.basename(serverJsPath)}.`);
+for (const serverJsPath of serverFilesToPatch) {
+  if (fs.existsSync(serverJsPath)) {
+    const originalServerCode = fs.readFileSync(serverJsPath, 'utf8');
+    if (!originalServerCode.includes(hookMarker)) {
+      console.log(`[Assemble] Injecting static asset server hook into ${path.basename(serverJsPath)}...`);
+      fs.writeFileSync(serverJsPath, hookCode + '\n' + originalServerCode, 'utf8');
+      console.log(`[Assemble] ✓ Static asset hook successfully injected into ${path.basename(serverJsPath)}.`);
+    }
   }
 }
 
