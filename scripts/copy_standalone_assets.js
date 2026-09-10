@@ -71,7 +71,7 @@ ${hookMarker}
   const _path = require('path');
 
   const _mimeTypes = {
-    '.css': 'text/css; charset=utf-8',
+    '.css': 'text/css',
     '.js': 'application/javascript; charset=utf-8',
     '.mjs': 'application/javascript; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
@@ -118,7 +118,7 @@ ${hookMarker}
       try {
         const reqUrl = req.url || '/';
         const parsedUrl = new URL(reqUrl, 'http://127.0.0.1:3000');
-        let pathname = decodeURIComponent(parsedUrl.pathname);
+        let pathname = decodeURIComponent(parsedUrl.pathname).replace(/\\/g, '/');
 
         // A. Handle /_next/static/*
         if (pathname.startsWith('/_next/static/')) {
