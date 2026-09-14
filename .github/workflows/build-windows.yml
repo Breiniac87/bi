@@ -87,33 +87,29 @@ jobs:
           $nodePath = (Get-Command node.exe).Source
           Copy-Item $nodePath "$stage\node.exe"
 
-          # 5. Исполняемый файл лаунчера, скрипты запуска, памятка и иконка
+          # 5. Исполняемый файл лаунчера и иконка
           Copy-Item "windows\launcher.exe" "$stage\E-Commerce Dashboard.exe"
-          Copy-Item "windows\Запустить Дашборд.bat" "$stage\Запустить Дашборд.bat"
-          Copy-Item "windows\Остановить.bat" "$stage\Остановить.bat"
-          Copy-Item "windows\ИНСТРУКЦИЯ.txt" "$stage\ИНСТРУКЦИЯ.txt"
           Copy-Item "windows\app_icon.ico" "$stage\app_icon.ico"
 
           Write-Host "✓ Портативная папка $stage успешно сформирована."
 
-      - name: Compress to Portable ZIP Archive
-        shell: pwsh
+      - name: Compile Inno Setup Installer
+        shell: cmd
         run: |
-          $zipFile = "release_windows\E-Commerce-Dashboard-Portable-v$env:APP_VERSION.zip"
-          Compress-Archive -Path "dist_windows\E-Commerce-Dashboard-Portable" -DestinationPath $zipFile -Force
-          Write-Host "✓ Готовый ZIP архив: $zipFile"
+          iscc /DAPP_VERSION="%APP_VERSION%" windows\setup.iss
+          echo ✓ Готовый инсталлятор: release_windows\E-Commerce-Dashboard-Setup-v%APP_VERSION%.exe
 
-      - name: Upload Portable ZIP as Artifact
+      - name: Upload Installer as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: E-Commerce-Dashboard-Portable-v${{ env.APP_VERSION }}
-          path: release_windows/E-Commerce-Dashboard-Portable-v*.zip
+          name: E-Commerce-Dashboard-Setup-v${{ env.APP_VERSION }}
+          path: release_windows/E-Commerce-Dashboard-Setup-v*.exe
           retention-days: 14
 
       - name: Publish to GitHub Releases (on Tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: release_windows/E-Commerce-Dashboard-Portable-v*.zip
+          files: release_windows/E-Commerce-Dashboard-Setup-v*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
