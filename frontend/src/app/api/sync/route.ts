@@ -162,8 +162,10 @@ function safeJsonParse(text?: string | null): any {
 export async function GET() {
   const runner = getEtlRunner(['--status', '--json']);
 
+  const env = { ...process.env, PATH: `${process.env.PATH || ''}${path.delimiter}${getProjectRoot()}` };
+
   return new Promise<NextResponse>((resolve) => {
-    execFile(runner.cmd, runner.args, { cwd: runner.cwd, timeout: 30000, maxBuffer: 5 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(runner.cmd, runner.args, { cwd: runner.cwd, env, timeout: 30000, maxBuffer: 5 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         console.error('Error fetching sync status:', error, stderr);
         return resolve(NextResponse.json({
@@ -230,9 +232,11 @@ export async function POST(request: Request) {
   isSyncRunning = true;
   syncStartedAt = Date.now();
 
+  const env = { ...process.env, PATH: `${process.env.PATH || ''}${path.delimiter}${getProjectRoot()}` };
+
   return new Promise<NextResponse>((resolve) => {
     try {
-      execFile(runner.cmd, runner.args, { cwd: runner.cwd, timeout: 180000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+      execFile(runner.cmd, runner.args, { cwd: runner.cwd, env, timeout: 180000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
         isSyncRunning = false;
 
         if (error) {
