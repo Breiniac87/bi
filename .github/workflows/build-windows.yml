@@ -55,7 +55,7 @@ jobs:
         shell: cmd
         run: |
           rc.exe /fo windows\app_icon.res windows\app_icon.rc
-          cl.exe /O2 /W3 /DUNICODE /D_UNICODE windows\launcher.c windows\app_icon.res /Fe:"windows\launcher.exe" user32.lib shell32.lib wininet.lib shlwapi.lib /link /SUBSYSTEM:WINDOWS
+          cl.exe /utf-8 /O2 /W3 /DUNICODE /D_UNICODE windows\launcher.c windows\app_icon.res /Fe:"windows\launcher.exe" user32.lib shell32.lib wininet.lib shlwapi.lib /link /SUBSYSTEM:WINDOWS
 
       - name: Extract Application Version
         shell: pwsh
@@ -86,6 +86,12 @@ jobs:
           # 4. Упаковка автономного node.exe в корень портативной папки
           $nodePath = (Get-Command node.exe).Source
           Copy-Item $nodePath "$stage\node.exe"
+
+          # Включаем DLL-библиотеки Visual C++ Redistributable для корректной работы better-sqlite3.node
+          Copy-Item "C:\Windows\System32\vcruntime140*.dll" "$stage\app\" -ErrorAction SilentlyContinue
+          Copy-Item "C:\Windows\System32\msvcp140*.dll" "$stage\app\" -ErrorAction SilentlyContinue
+          Copy-Item "C:\Windows\System32\vcruntime140*.dll" "$stage\" -ErrorAction SilentlyContinue
+          Copy-Item "C:\Windows\System32\msvcp140*.dll" "$stage\" -ErrorAction SilentlyContinue
 
           # 5. Исполняемый файл лаунчера и иконка
           Copy-Item "windows\launcher.exe" "$stage\E-Commerce Dashboard.exe"
