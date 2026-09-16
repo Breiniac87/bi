@@ -2,6 +2,8 @@
 #define _UNICODE
 #define WIN32_LEAN_AND_MEAN
 
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <wininet.h>
 #include <shlobj.h>
@@ -9,16 +11,47 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "wininet.lib")
 #pragma comment(lib, "shlwapi.lib")
 
-#define PORT_STR L"3000"
-#define APP_URL L"http://127.0.0.1:3000"
+
+static int GetFreePort(void) {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return 3000;
+    
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sock == INVALID_SOCKET) { WSACleanup(); return 3000; }
+    
+    struct sockaddr_in addr;
+    ZeroMemory(&addr, sizeof(addr));
+    addr.sin_family = AF_INET;
+    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    addr.sin_port = 0;
+    
+    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+        closesocket(sock);
+        WSACleanup();
+        return 3000;
+    }
+    
+    int len = sizeof(addr);
+    if (getsockname(sock, (struct sockaddr*)&addr, &len) != 0) {
+        closesocket(sock);
+        WSACleanup();
+        return 3000;
+    }
+    
+    int port = ntohs(addr.sin_port);
+    closesocket(sock);
+    WSACleanup();
+    return port;
+}
 
 // Проверка доступности HTTP-сервера
-static BOOL IsServerReady(void) {
+static BOOL IsServerReady(const WCHAR *appUrl) {
     HINTERNET hInternet = InternetOpenW(L"ECommerceDashboardLauncher/1.0", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
     if (!hInternet) return FALSE;
 
@@ -28,7 +61,7 @@ static BOOL IsServerReady(void) {
 
     HINTERNET hUrl = InternetOpenUrlW(
         hInternet,
-        APP_URL,
+        appUrl,
         NULL,
         0,
         INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_PRAGMA_NOCACHE,
@@ -54,7 +87,7 @@ static BOOL IsServerReady(void) {
 }
 
 // Открытие окна приложения в Edge App / Chrome / системном браузере
-static void OpenAppWindow(const WCHAR *appDataDir) {
+static void OpenAppWindow(const WCHAR *appDataDir, const WCHAR *appUrl) {
     WCHAR browserExe[MAX_PATH] = {0};
     WCHAR args[MAX_PATH * 2] = {0};
 
@@ -86,7 +119,7 @@ static void OpenAppWindow(const WCHAR *appDataDir) {
 
     // 2. Если Edge найден, запускаем в режиме окна приложения (--app)
     if (browserExe[0] != L'\0') {
-        swprintf_s(args, MAX_PATH * 2, L"--app=\"%s\" --user-data-dir=\"%s\\EdgeProfile\"", APP_URL, appDataDir);
+        swprintf_s(args, MAX_PATH * 2, L"--app=\"%s\" --user-data-dir=\"%s\\EdgeProfile\"", appUrl, appDataDir);
         HINSTANCE hInst = ShellExecuteW(NULL, L"open", browserExe, args, NULL, SW_SHOWNORMAL);
         if ((INT_PTR)hInst > 32) {
             return;
@@ -101,7 +134,7 @@ static void OpenAppWindow(const WCHAR *appDataDir) {
     };
     for (int i = 0; chromePaths[i] != NULL; i++) {
         if (PathFileExistsW(chromePaths[i])) {
-            swprintf_s(args, MAX_PATH * 2, L"--app=\"%s\"", APP_URL);
+            swprintf_s(args, MAX_PATH * 2, L"--app=\"%s\"", appUrl);
             HINSTANCE hInst = ShellExecuteW(NULL, L"open", chromePaths[i], args, NULL, SW_SHOWNORMAL);
             if ((INT_PTR)hInst > 32) {
                 return;
@@ -110,10 +143,17 @@ static void OpenAppWindow(const WCHAR *appDataDir) {
     }
 
     // 4. Fallback: системный браузер по умолчанию
-    ShellExecuteW(NULL, L"open", APP_URL, NULL, NULL, SW_SHOWNORMAL);
+    ShellExecuteW(NULL, L"open", appUrl, NULL, NULL, SW_SHOWNORMAL);
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nShowCmd) {
+    int dynamicPort = GetFreePort();
+    WCHAR portStr[16];
+    swprintf_s(portStr, 16, L"%d", dynamicPort);
+    
+    WCHAR appUrl[MAX_PATH];
+    swprintf_s(appUrl, MAX_PATH, L"http://127.0.0.1:%d", dynamicPort);
+
     UNREFERENCED_PARAMETER(hInstance);
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
@@ -191,8 +231,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     }
 
     // Если сервер уже запущен — просто открываем окно
-    if (IsServerReady()) {
-        OpenAppWindow(appDataDir);
+    if (IsServerReady(appUrl)) {
+        OpenAppWindow(appDataDir, appUrl);
         return 0;
     }
 
@@ -242,7 +282,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     );
 
     // Установка переменных окружения для процесса сервера
-    SetEnvironmentVariableW(L"PORT", PORT_STR);
+    SetEnvironmentVariableW(L"PORT", portStr);
     SetEnvironmentVariableW(L"HOSTNAME", L"127.0.0.1");
     SetEnvironmentVariableW(L"NODE_ENV", L"production");
     SetEnvironmentVariableW(L"DATABASE_PATH", userDb);
@@ -307,7 +347,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     BOOL ready = FALSE;
     for (int i = 0; i < 50; i++) {
         Sleep(500);
-        if (IsServerReady()) {
+        if (IsServerReady(appUrl)) {
             ready = TRUE;
             break;
         }
@@ -330,7 +370,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     }
 
     // Открываем окно приложения
-    OpenAppWindow(appDataDir);
+    OpenAppWindow(appDataDir, appUrl);
 
     return 0;
 }

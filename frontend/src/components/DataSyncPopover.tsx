@@ -327,9 +327,9 @@ export function DataSyncPopover({ onDataUpdated }: DataSyncPopoverProps) {
 
   const formatPathDisplay = (fullPath: string) => {
     if (!fullPath) return 'Папка не выбрана';
-    const parts = fullPath.split('/');
+    const parts = fullPath.split(/[/\\]/);
     if (parts.length > 3) {
-      return '.../' + parts.slice(-2).join('/');
+      return '...\\' + parts.slice(-2).join('\\');
     }
     return fullPath;
   };
