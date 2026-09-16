@@ -168,7 +168,7 @@ ${hookMarker}
       try {
         const reqUrl = req.url || '/';
         const parsedUrl = new URL(reqUrl, 'http://127.0.0.1:3000');
-        let pathname = decodeURIComponent(parsedUrl.pathname).replace(/\\/g, '/');
+        let pathname = decodeURIComponent(parsedUrl.pathname).replace(/\\\\/g, '/');
 
         // A. Handle /_next/static/*
         if (pathname.startsWith('/_next/static/')) {
